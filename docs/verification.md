@@ -20,6 +20,8 @@ The development workspace also has a separate React Native Web comparison harnes
 
 The standalone release includes source/unit/renderer/host-projection tests and selected synthetic screenshots, not the separate comparison application's source or its large host renderer fixtures. The browser check is not a connected-host integration test.
 
+The README's two focused images show the shipped renderer's UI-label/JSON view and bounded long-output preview. They are component crops from the same browser harness, not reconstructed artwork. The capture checks the compacted path and the first-twenty-lines boundary. Along with the three overview images, all five public screenshots use synthetic data and are labeled as component previews rather than live-host captures.
+
 On the macOS Paseo 0.8.0 installation, earlier smoke checks verified 32px desktop pitch, real custom-tool icons and short summaries, readable output previews, and Show all/Show less. The beta was subsequently reloaded into that same enabled installation and reported running, without changing host preferences or restarting the daemon. The new quoted-label/path rendering was checked in the browser and renderer tests, not re-exercised in a live personal conversation. These targeted checks do not amount to the full browser matrix running in the installed app.
 
 ## Dependency review
