@@ -2,7 +2,10 @@ import type { PluginTimelineItemProps } from "@getpaseo/plugin/client";
 import { copyText, Icon, ScrollView, useRevealedText } from "@getpaseo/plugin/client/react-native";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ActivityIndicator, Pressable, Text, View, type TextStyle, type ViewStyle } from "react-native";
-import { activityIcon, detailSections, presentValue, previewText, renderReadable, MAX_FORMAT_CHARS, type DetailSection } from "../shared/details";
+import {
+  activityIcon, detailSections, presentValue, previewText, renderReadable, MAX_FORMAT_CHARS, PREVIEW_CHARS, PREVIEW_LINES,
+  type DetailSection, type ReadableSegment, type TextPreview,
+} from "../shared/details";
 import { headerSummary } from "../shared/summary";
 import { parseInlineMarkdown, parseReasoningMarkdown } from "../shared/markdown";
 import type { DiffLine } from "../shared/presentation";
@@ -128,6 +131,24 @@ function CodeContent({ code, language, diff, theme, styles }: {
   return wrap ? content : <ScrollView horizontal nestedScrollEnabled contentContainerStyle={{ flexGrow: 1 }}>{content}</ScrollView>;
 }
 
+function ReadableSegments({ segments, theme, styles }: {
+  segments: ReadableSegment[]; theme: Theme; styles: Styles;
+}) {
+  // Copy retains exact logical separators; newline-only Text nodes add extra
+  // line boxes on React Native Web, so visual blocks use a small fixed gap.
+  return <View style={{ gap: 6, minWidth: 0 }}>
+    {segments.map((segment, index) => {
+      if (segment.kind === "status") {
+        const statusStyle = segment.tone === "error"
+          ? styles.error
+          : [styles.message, segment.tone === "warning" && { color: theme.colors.statusWarning }];
+        return <View key={index} style={{ minWidth: 0 }}><Text selectable style={statusStyle}>{segment.text || " "}</Text></View>;
+      }
+      return <View key={index} style={{ minWidth: 0 }}><CodeContent code={segment.text} language={segment.language} theme={theme} styles={styles} /></View>;
+    })}
+  </View>;
+}
+
 function Section({ section, theme, styles, running }: {
   section: DetailSection; theme: Theme; styles: Styles; running?: boolean;
 }) {
@@ -145,7 +166,7 @@ function Section({ section, theme, styles, running }: {
   const value = useMemo(() => readable ? undefined : presentValue(section.value, section.language), [readable, section.value, section.language]);
   const source = value ? (raw ? section.raw ?? value.raw : value.text) : "";
   const preview = useMemo(() => readable ? renderReadable(readable) : previewText(source), [readable, source]);
-  const rendered = useMemo(() => all ? (readable ? renderReadable(readable, true) : { text: source, language: undefined }) : preview, [all, readable, source, preview]);
+  const rendered: TextPreview = useMemo(() => all ? (readable ? renderReadable(readable, true) : { text: source, truncated: false }) : preview, [all, readable, source, preview]);
   const visible = rendered.text;
   const copy = async () => {
     const request = ++copyRequest.current;
@@ -158,10 +179,15 @@ function Section({ section, theme, styles, running }: {
     }
   };
   const canRaw = !!section.readable || value?.canFormat || section.raw !== undefined;
-  const formatLimited = !raw && !readable && !value?.canFormat && source.length > MAX_FORMAT_CHARS && /^\s*[[{]/.test(source.slice(0, 256));
+  const formatLimited = readable
+    ? rendered.formatLimited === true
+    : !raw && !value?.canFormat && (value?.formatLimited === true || source.length > MAX_FORMAT_CHARS && /^\s*[[{]/.test(source.slice(0, 256)));
+  const readableSegments = !raw && readable ? rendered.segments : undefined;
   const content = section.prose && !raw
     ? <Text selectable style={section.label === "Error" ? styles.error : styles.prose}>{visible}</Text>
-    : <CodeContent code={visible} language={raw ? "text" : rendered.language ?? readable?.language ?? value?.language ?? "text"} diff={!raw && (!preview.truncated || all) ? section.diff : undefined} theme={theme} styles={styles} />;
+    : readableSegments
+      ? <ReadableSegments segments={readableSegments} theme={theme} styles={styles} />
+      : <CodeContent code={visible} language={raw ? "text" : rendered.language ?? readable?.language ?? value?.language ?? "text"} diff={!raw && (!preview.truncated || all) ? section.diff : undefined} theme={theme} styles={styles} />;
   return (
     <View style={styles.section}>
       <View style={styles.toolbar}>
@@ -177,6 +203,7 @@ function Section({ section, theme, styles, running }: {
       </View>
       {readable ? <Text style={styles.message}>{readable.note}</Text> : null}
       {formatLimited ? <Text style={styles.message}>Formatting limit · Showing original text with wrapping</Text> : null}
+      {preview.truncated && !all ? <Text style={styles.message}>Preview limit · First {PREVIEW_LINES} lines / {PREVIEW_CHARS.toLocaleString()} characters</Text> : null}
       {visible === "" || (running && section.label === "Output" && section.value == null) ? <Text style={styles.message}>{running && section.label === "Output" ? "Waiting for output…" : "Empty"}</Text> : (
         <ScrollView nestedScrollEnabled style={styles.scroll}>{content}</ScrollView>
       )}
