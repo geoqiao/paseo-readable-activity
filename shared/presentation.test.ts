@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import * as LucideIcons from "lucide-react";
 import {
+  PASEO_TOOL_ICONS,
   diffLinesForDetail,
   diffStatsFromStrings,
   diffStatsFromUnifiedDiff,
@@ -15,6 +17,27 @@ import {
 } from "./presentation";
 
 describe("colorful activity presentation", () => {
+  it("uses real Lucide exports for every configured Paseo tool icon, including aliases", () => {
+    // Same icon release as Paseo 0.8.0's locked lucide-react-native. Test-only:
+    // production still renders through the host Icon, not this web package.
+    for (const [tool, name] of Object.entries(PASEO_TOOL_ICONS)) {
+      const icon = Reflect.get(LucideIcons, name);
+      expect(icon, tool + ": " + name).toBeDefined();
+      expect(typeof icon === "function" || (typeof icon === "object" && icon !== null && "$$typeof" in icon), name).toBe(true);
+      expect(icon).not.toBe(LucideIcons.Icon);
+      expect(icon).not.toBe(LucideIcons.createLucideIcon);
+    }
+  });
+
+  it.each([
+    "paseo_get_agent_activity", "mcp_paseo_get_agent_activity",
+    "mcp__paseo__get_agent_activity", "paseo.get_agent_activity",
+  ])("gives %s a supported activity icon", (name) => {
+    expect(paseoToolIcon(name)).toBe("Activity");
+    expect(resolveToolCallPresentation({ name, detail: { type: "unknown", input: {}, output: "done" } }))
+      .toMatchObject({ icon: "Activity", category: "agent" });
+  });
+
   it("maps file extensions to icons and Shiki languages", () => {
     expect(fileIconForPath("src/web/main.tsx")).toBe("FileCode2");
     expect(fileIconForPath("package.json")).toBe("FileJson");

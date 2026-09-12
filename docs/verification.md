@@ -18,6 +18,16 @@ The independent review's whitespace-stripped blank-context case also failed
 before its one-condition fix and passes now.
 See [code-review.md](code-review.md).
 
+The v0.1.0-beta.4 icon fix passes typecheck, zero lint issues and **13 files / 224 tests**.
+All seven new cases failed against the previous icon mapping, then passed after replacing
+`ListActivity` with `Activity`. The suite validates every entry in the 62-tool Paseo map,
+four supported tool-name spellings, and renderer size/color and manual disclosure across updates.
+The pinned test-only `lucide-react@0.546.0` supplies the web icon exports for the same Lucide
+release as Paseo 0.8.0's locked `lucide-react-native@0.546.0`; it is never imported by production.
+Host source evidence: [named-export lookup](https://github.com/getpaseo/paseo/blob/b8e24677e12b226c7c38c1c3a40649daa9f1152f/packages/app/src/plugins/icons.ts)
+and [dependency lock](https://github.com/getpaseo/paseo/blob/b8e24677e12b226c7c38c1c3a40649daa9f1152f/package-lock.json).
+This checks catalog compatibility, not native SVG rendering.
+
 Coverage includes:
 - Lexical JSON fidelity, empty/malformed/oversized payloads, generated-output bounds and surrogate boundaries.
 - Explicit code inputs, typed result envelopes, non-text placeholders and full Raw data.
@@ -56,6 +66,16 @@ After typecheck, beta.3 was reloaded into the same enabled macOS Paseo 0.8.0
 installation. Its new log entries were only stopping/stopped/loading/ready,
 with no new stderr. The DSH and pet installations retained enabled/running state;
 the daemon and display preferences were not changed.
+
+For beta.4, a focused `?icons` browser pass at **1500×1050 dark / 390×844 light**
+verified all 62 headers contain a drawn 14px Lucide SVG, including the valid `Globe2` alias,
+and the Activity glyph survives expansion and streaming. The preview now resolves named
+exports like the host and uses the matching Lucide release; it no longer drops aliases by
+checking only the canonical `icons` map. The existing UI suite also passed, covering spacing,
+Raw/Copy, bounded large output and keyboard disclosure. After typecheck, the existing enabled
+macOS Paseo 0.8.0 installation reloaded successfully with only stopping/stopped/loading/ready
+log additions and no new stderr. Other plugins retained their enabled/running states.
+No new visual check in the native app or on a mobile device is claimed for this icon patch.
 
 A read-only public-SDK replay of eight recent live timelines exercised **582 completed unknown
 tool calls**: all stayed within the shared preview bounds, none threw, and hashes confirmed all

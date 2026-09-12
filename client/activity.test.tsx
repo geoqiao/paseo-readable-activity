@@ -109,6 +109,28 @@ describe.each([
     };
   }
 
+  it("keeps the activity icon and manual disclosure through a tool status update", async () => {
+    const data = (status: "running" | "completed") => createToolCallData({
+      type: "tool_call", callId: "activity-icon", name: "paseo_get_agent_activity", status, error: null,
+      detail: { type: "unknown", input: { agentId: "synthetic-agent" }, output: status },
+    });
+    const renderer = await mount(<ToolActivity {...props(data("running"))} />);
+    const checkIcon = () => {
+      const icon = renderer.root.findAll((node) => String(node.type) === "Icon" && node.props.name === "Activity");
+      expect(icon).toHaveLength(1);
+      expect(icon[0]!.props).toMatchObject({ size: 14, color: props(data("running")).theme.colors.foregroundMuted });
+    };
+    checkIcon();
+    await click(renderer);
+    expect(labels(renderer)[0]).toMatch(/^Collapse /);
+    await act(async () => renderer.update(<ToolActivity {...props(data("completed"), 2)} />));
+    checkIcon();
+    expect(labels(renderer)[0]).toMatch(/^Collapse /);
+    await click(renderer);
+    checkIcon();
+    expect(labels(renderer)[0]).toMatch(/^Expand /);
+  });
+
   it.each(["running", "completed", "failed", "canceled"] as const)(
     "starts a %s tool call collapsed",
     async (status) => {
