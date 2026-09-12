@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  exaOutputText,
-  exaToolKind,
-  exaToolSummary,
-  parseExaSearchResults,
-} from "./exa";
+import { exaToolKind, exaToolSummary } from "./exa";
 
 describe("Exa tool presentation", () => {
   it("recognizes namespaced Exa tools", () => {
@@ -20,52 +15,14 @@ describe("Exa tool presentation", () => {
     );
   });
 
-  it("falls back to MCP text when structured content has no text", () => {
-    expect(
-      exaOutputText({
-        structuredContent: { results: [{ title: "Structured result" }] },
-        content: [{ type: "text", text: "Fallback text" }],
-      }),
-    ).toBe("Fallback text");
+  it("bounds query and prompt normalization before scanning a large source", () => {
+    const large = " ".repeat(720) + "find Paseo plugin docs" + "x".repeat(1_000_000);
+    const searchInput = Object.freeze({ query: large });
+    const agentInput = Object.freeze({ prompt: large });
+    expect(exaToolSummary("search", searchInput)).toBeUndefined();
+    expect(exaToolSummary("agent", agentInput)).toBeUndefined();
+    expect(searchInput.query).toBe(large);
+    expect(agentInput.prompt).toBe(large);
   });
 
-  it("parses MCP text output into search result cards", () => {
-    const output = {
-      content: [
-        {
-          type: "text",
-          text: [
-            "Title: Plugin docs",
-            "URL: https://paseo.sh/docs/plugins",
-            "Published: 2026-08-28",
-            "Author: N/A",
-            "Highlights:",
-            "The plugin guide.",
-            "",
-            "---",
-            "",
-            "Title: API reference",
-            "URL: https://paseo.sh/docs/plugins/v0.8/reference",
-            "Highlights:",
-            "The API reference.",
-          ].join("\n"),
-        },
-      ],
-    };
-    expect(exaOutputText(output)).toContain("Title: Plugin docs");
-    expect(parseExaSearchResults(output)).toEqual([
-      {
-        title: "Plugin docs",
-        url: "https://paseo.sh/docs/plugins",
-        published: "2026-08-28",
-        author: "N/A",
-        highlights: "The plugin guide.",
-      },
-      {
-        title: "API reference",
-        url: "https://paseo.sh/docs/plugins/v0.8/reference",
-        highlights: "The API reference.",
-      },
-    ]);
-  });
 });

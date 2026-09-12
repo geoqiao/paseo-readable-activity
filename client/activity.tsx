@@ -3,7 +3,7 @@ import { copyText, Icon, ScrollView, useRevealedText } from "@getpaseo/plugin/cl
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ActivityIndicator, Pressable, Text, View, type TextStyle, type ViewStyle } from "react-native";
 import {
-  activityIcon, detailSections, presentValue, previewText, renderReadable, MAX_FORMAT_CHARS, PREVIEW_CHARS, PREVIEW_LINES,
+  activityIcon, detailSections, presentValue, previewText, rawValue, renderReadable, MAX_FORMAT_CHARS, PREVIEW_CHARS, PREVIEW_LINES,
   type DetailSection, type ReadableSegment, type TextPreview,
 } from "../shared/details";
 import { headerSummary } from "../shared/summary";
@@ -164,7 +164,9 @@ function Section({ section, theme, styles, running }: {
   const readable = !raw ? section.readable : undefined;
   // Do not stringify a multi-megabyte envelope/base64 payload merely to show twenty text lines.
   const value = useMemo(() => readable ? undefined : presentValue(section.value, section.language), [readable, section.value, section.language]);
-  const source = value ? (raw ? section.raw ?? value.raw : value.text) : "";
+  const source = useMemo(() => raw
+    ? section.raw !== undefined ? rawValue(section.raw) : value?.raw ?? ""
+    : value?.text ?? "", [raw, section.raw, value]);
   const preview = useMemo(() => readable ? renderReadable(readable) : previewText(source), [readable, source]);
   const rendered: TextPreview = useMemo(() => all ? (readable ? renderReadable(readable, true) : { text: source, truncated: false }) : preview, [all, readable, source, preview]);
   const visible = rendered.text;

@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  githubOutputText,
-  githubOutputValue,
   githubToolIcon,
   githubToolKind,
   githubToolLabel,
@@ -28,29 +26,11 @@ describe("GitHub tool presentation", () => {
     );
   });
 
-  it("unwraps structured and text MCP envelopes", () => {
-    const output = {
-      structuredContent: {
-        total_count: 1,
-        items: [{ full_name: "getpaseo/paseo" }],
-      },
-      content: [{ type: "text", text: "fallback" }],
-    };
-    expect(githubOutputValue(output)).toEqual(output.structuredContent);
-    expect(githubOutputText({ content: [{ type: "text", text: "workflow logs" }] })).toBe(
-      "workflow logs",
-    );
+  it("bounds large search-query normalization without changing the source", () => {
+    const query = " ".repeat(720) + "find Paseo plugin docs" + "x".repeat(1_000_000);
+    const input = Object.freeze({ query });
+    expect(githubToolSummary("search-code", input)).toBeUndefined();
+    expect(input.query).toBe(query);
   });
 
-  it("parses JSON embedded in MCP text", () => {
-    const output = {
-      content: [
-        {
-          type: "text",
-          text: 'result_count=1\n\n{"items":[{"name":"README.md"}]}',
-        },
-      ],
-    };
-    expect(githubOutputValue(output)).toEqual({ items: [{ name: "README.md" }] });
-  });
 });

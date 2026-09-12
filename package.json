@@ -1,6 +1,6 @@
 {
   "name": "readable-agent-activity",
-  "version": "0.1.0-beta.2",
+  "version": "0.1.0-beta.3",
   "description": "Readable tool calls and reasoning for Paseo 0.8: quiet headers, code and JSON, bounded previews. Full detail only.",
   "repository": {
     "type": "git",

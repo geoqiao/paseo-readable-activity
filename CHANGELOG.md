@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.0-beta.3
+
+- Share hunk-aware classification between diff colors and counts, so source lines beginning with `+++` or `---` are not confused with file headers. Accept whitespace-stripped blank context lines; preserve other partial/malformed input with a conservative fallback.
+- Fix a Unicode boundary case that could duplicate an earlier readable preview segment; retain complete source and selected-view Copy.
+- Expose complete edit details and read range metadata (including zero) in Raw, serialized only when selected rather than while building the default preview.
+- Bound Exa/GitHub summary normalization before scanning large inputs, reusing the existing header helper. An all-whitespace prefix may omit the header summary; full input remains in details.
+- Delete unreachable legacy output parsers and their obsolete tests; keep active recognition/summary behavior and add actual detail-source fidelity coverage.
+- Avoid retaining a full classified diff array just to count changes; memoize selected Raw serialization so Copy/Show all do not repeatedly serialize large source details.
+- 217 tests pass. The initial 213-case review suite reproduced 14 failures against the previous runtime; further regressions caught repeated Raw serialization and stripped blank context before fixes. Production-component browser checks cover dark/light, narrow layout, Raw/Copy, streaming, diff colors and preview boundaries; no native-mobile or latency benchmark claim.
+
 ## 0.1.0-beta.2
 
 - Recognize only explicitly marked Pi Code-mode `exec_command` result wrappers and expand one output layer.

@@ -248,6 +248,79 @@ describe.each([
     expect(displayed(renderer)).toContain(code);
   });
 
+  it("renders unified diff colors and copies the selected source or complete edit detail", async () => {
+    const detail = {
+      type: "edit" as const,
+      filePath: "README.md",
+      unifiedDiff: [
+        "--- a/README.md",
+        "+++ b/README.md",
+        "@@ -1,2 +1,3 @@",
+        " ---",
+        "---counter",
+        "+++counter",
+        "+---",
+      ].join("\n"),
+      oldString: "old source that remains available",
+      newString: "new source that remains available",
+    };
+    const renderer = await mount(<ToolActivity {...props(createToolCallData({
+      type: "tool_call", callId: "edit", name: "edit", status: "completed", error: null, detail,
+    }))} />);
+    await click(renderer);
+    expect(displayed(renderer)).toContain("+++counter");
+    expect(displayed(renderer)).toContain("−--counter");
+    const addRow = renderer.root.find((node) => String(node.type) === "Text" && node.children.includes("+++counter"));
+    const removeRow = renderer.root.find((node) => String(node.type) === "Text" && node.children.includes("−--counter"));
+    expect(Object.assign({}, ...addRow.props.style.filter(Boolean)).color).toBe(props(null).theme.colors.statusSuccess);
+    expect(Object.assign({}, ...removeRow.props.style.filter(Boolean)).color).toBe(props(null).theme.colors.statusDanger);
+    await press(renderer, "Copy Diff");
+    expect(copyText).toHaveBeenLastCalledWith(detail.unifiedDiff);
+    await press(renderer, "Show raw Diff");
+    await press(renderer, "Copy Diff");
+    expect(JSON.parse(vi.mocked(copyText).mock.lastCall![0])).toEqual(detail);
+  });
+
+  it("serializes lazy Raw only when selected or its source changes, not for Copy or Show all", async () => {
+    const tail = vi.fn(() => "x".repeat(100_000));
+    const detail = {
+      type: "edit", filePath: "a.ts", unifiedDiff: "@@ -1 +1 @@\n-old\n+new",
+      get sourceTail() { return tail(); },
+    };
+    const data = { ...toolData("running"), detail };
+    const renderer = await mount(<ToolActivity {...props(data)} />);
+    await click(renderer);
+    expect(tail).not.toHaveBeenCalled();
+    await press(renderer, "Show raw Diff");
+    expect(tail).toHaveBeenCalledTimes(1);
+    await press(renderer, "Copy Diff");
+    await press(renderer, "Show all Diff");
+    expect(tail).toHaveBeenCalledTimes(1);
+    const nextTail = vi.fn(() => "current source");
+    const updated = { ...data, detail: {
+      type: "edit", filePath: "a.ts", unifiedDiff: detail.unifiedDiff,
+      get sourceTail() { return nextTail(); },
+    } };
+    await act(async () => renderer.update(<ToolActivity {...props(updated)} />));
+    await press(renderer, "Copy Diff");
+    expect(nextTail).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(vi.mocked(copyText).mock.lastCall![0]).sourceTail).toBe("current source");
+  });
+
+  it("keeps read range metadata in Raw while normal Contents stays copied as content", async () => {
+    const detail = { type: "read" as const, filePath: "README.md", content: "visible contents", offset: 0, limit: 0 };
+    const renderer = await mount(<ToolActivity {...props(createToolCallData({
+      type: "tool_call", callId: "read", name: "read", status: "completed", error: null, detail,
+    }))} />);
+    await click(renderer);
+    expect(displayed(renderer)).toContain("visible contents");
+    await press(renderer, "Copy Contents");
+    expect(copyText).toHaveBeenLastCalledWith(detail.content);
+    await press(renderer, "Show raw Contents");
+    await press(renderer, "Copy Contents");
+    expect(JSON.parse(vi.mocked(copyText).mock.lastCall![0])).toEqual(detail);
+  });
+
   it("renders bounded readable result blocks, keeping metadata/images in full Raw copies", async () => {
     const text = Array.from({ length: 100 }, (_, i) => "tree line " + i).join("\n");
     const output = { content: [{ type: "text", text }, { type: "image", mimeType: "image/png", data: "B64".repeat(100_000) }] as Record<string, string>[], details: { extra: true } };

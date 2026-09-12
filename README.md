@@ -6,7 +6,7 @@
 
 A Paseo plugin that makes JSON, code and tool output easier to scan — without mounting an entire long result when you open it.
 
-[Install](#install) · [Performance](#smaller-previews-less-rendering-work) · [Technical design](#technical-design) · [Latest beta](https://github.com/geoqiao/paseo-readable-activity/releases/tag/v0.1.0-beta.2)
+[Install](#install) · [Performance](#smaller-previews-less-rendering-work) · [Technical design](#technical-design) · [Latest beta](https://github.com/geoqiao/paseo-readable-activity/releases/tag/v0.1.0-beta.3)
 
 </div>
 
@@ -95,7 +95,7 @@ Verified with Paseo app, daemon and SDK **0.8.0 on macOS**. The manifest range i
 3. Install the pinned beta on your intended daemon:
 
 ```sh
-paseo plugin add geoqiao/paseo-readable-activity --ref v0.1.0-beta.2 --host <your-host>
+paseo plugin add geoqiao/paseo-readable-activity --ref v0.1.0-beta.3 --host <your-host>
 paseo plugin ls --host <your-host>
 ```
 
@@ -118,6 +118,7 @@ The implementation keeps the renderer small and predictable: **public SDK contri
 | **Lexical JSON formatting** | Changes whitespace while preserving received number spellings, duplicate keys, key order and escapes. Structured objects have already lost their original source whitespace. |
 | **Explicit format recognition** | Only known code fields, typed content envelopes (including the DSH ACP one-layer text projection), the marked Pi Code-mode exec-result shape and recognized UI labels get special treatment. No source execution, guessed inner tool calls, recursive field walking or global backslash replacement. |
 | **Separate work limits** | Formatting input/output and highlighting are capped at 100,000 characters; serialized envelope decoding at 1,000,000. Oversized or unrecognized text falls back to literal content. |
+| **Shared diff classification and lazy source access** | Hunk ranges distinguish file headers from `+++`/`---`-looking source lines. Diff counts and colors use the same classifier. Complete edit source and read range metadata stay in Raw without eager serialization for the preview. |
 | **Local, manual disclosure** | Expansion and Show all survive streaming/status/theme updates while mounted. Virtual-list remounts reset them; the plugin does not infer host preferences from private storage. |
 | **Host-native building blocks** | React Native primitives, public host icons and theme colors. Desktop spacing accounts for Paseo's external row gap; compact mode keeps 44px touch targets. |
 | **Presentation-only lifecycle** | No server entry, runtime network requests, process execution or filesystem access. Contributions unregister on cleanup; clipboard writes happen only after Copy. |
@@ -134,7 +135,7 @@ npm ci --ignore-scripts --legacy-peer-deps --no-audit --no-fund
 npm run check
 ```
 
-Typecheck, lint and **202 tests** cover fidelity, malformed/large data, explicit Pi Code-mode result wrappers, DSH-projected ACP content blocks, mixed block languages, status visibility, icons, summaries, highlighting, clipboard races, manual folding, streaming and themes. Pinned host projection tests explicitly reproduce the unsupported Summary case; passing that test does not mean Summary is supported.
+Typecheck, lint and **217 tests** cover fidelity, malformed/large data, explicit Pi Code-mode result wrappers, DSH-projected ACP content blocks, mixed block languages, status visibility, hunk-aware diffs, Unicode preview boundaries, lazy source access, icons, summaries, highlighting, clipboard races, manual folding, streaming and themes. Pinned host projection tests explicitly reproduce the unsupported Summary case; passing that test does not mean Summary is supported.
 
 The new formatter cases use synthetic envelopes only. They cover malformed or partial wrappers,
 nonzero exits, running sessions, empty output, upstream truncation, formatting limits, multiple
@@ -144,7 +145,7 @@ in the plugin.
 
 The wider browser harness checks dark/light themes, compact layout, keyboard controls, overflow and large-output previews. It is not a native mobile test. A full reconnect/enable-disable matrix and a latency/FPS benchmark remain outstanding.
 
-Run checks before installing or reloading an explicit target host; do not auto-enable a disabled installation. [Verification, dependency review and remaining gaps](docs/verification.md).
+Run checks before installing or reloading an explicit target host; do not auto-enable a disabled installation. [Verification, dependency review and remaining gaps](docs/verification.md) · [Separate post-release code review](docs/code-review.md).
 
 </details>
 

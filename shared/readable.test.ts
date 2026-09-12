@@ -242,4 +242,28 @@ describe("explicit readable transport views", () => {
     const text = "x".repeat(PREVIEW_CHARS - 1) + "🐈tail";
     expect(previewText(text)).toEqual({ text: "x".repeat(PREVIEW_CHARS - 1), truncated: true });
   });
+
+  it("does not remove a lone high surrogate at a line preview boundary", () => {
+    const firstBlock = Array.from({ length: 19 }, (_, index) => "line " + index).join("\n") + "\nlast\uD83D";
+    const preview = previewText(firstBlock + "\nnext block");
+    expect(preview.text).toBe(firstBlock);
+    expect(preview.truncated).toBe(true);
+  });
+
+  it("keeps a complete pair when the line preview ends after an emoji", () => {
+    const firstBlock = Array.from({ length: 19 }, (_, index) => "line " + index).join("\n") + "\nlast🐈";
+    expect(previewText(firstBlock + "\nnext block").text).toBe(firstBlock);
+  });
+
+  it("keeps multi-block preview segments lossless when the first block ends in a lone surrogate", () => {
+    const firstBlock = Array.from({ length: 19 }, (_, index) => "line " + index).join("\n") + "\nlast\uD83D";
+    const view = readableValue({ content: [{ type: "text", text: firstBlock }, { type: "text", text: "next block" }] })!;
+    const preview = renderReadable(view);
+    const reconstructed = preview.segments?.map((segment) => (segment.separator ?? "") + segment.text).join("");
+    expect(reconstructed).toBe(preview.text);
+    expect(preview.text).toBe(firstBlock);
+    expect(preview.text.length).toBeLessThanOrEqual(PREVIEW_CHARS);
+    expect(preview.text.split("\n")).toHaveLength(PREVIEW_LINES);
+    expect(renderReadable(view, true).text).toBe(firstBlock + "\n\nnext block");
+  });
 });
