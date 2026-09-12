@@ -1,6 +1,6 @@
 {
   "name": "readable-agent-activity",
-  "version": "0.1.0-beta.3",
+  "version": "0.1.0-beta.4",
   "description": "Readable tool calls and reasoning for Paseo 0.8: quiet headers, code and JSON, bounded previews. Full detail only.",
   "repository": {
     "type": "git",
@@ -39,6 +39,7 @@
     "@types/react": "~19.2.0",
     "@types/react-test-renderer": "19.1.0",
     "diff": "7.0.0",
+    "lucide-react": "0.546.0",
     "oxlint": "1.61.0",
     "react": "19.1.0",
     "react-native": "0.81.5",

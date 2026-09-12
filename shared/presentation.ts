@@ -246,7 +246,7 @@ const PASEO_TOOL_LABELS: Readonly<Record<string, string>> = {
   browser_close_tab: "Close Browser Tab",
 };
 
-const PASEO_TOOL_ICONS: Readonly<Record<string, string>> = {
+export const PASEO_TOOL_ICONS: Readonly<Record<string, string>> = {
   speak: "MicVocal",
   create_workspace: "FolderPlus",
   list_workspaces: "Folders",
@@ -283,7 +283,7 @@ const PASEO_TOOL_ICONS: Readonly<Record<string, string>> = {
   list_models: "Cpu",
   list_profiles: "ContactRound",
   inspect_provider: "ScanSearch",
-  get_agent_activity: "ListActivity",
+  get_agent_activity: "Activity",
   set_agent_mode: "SlidersHorizontal",
   list_pending_permissions: "ShieldAlert",
   respond_to_permission: "ShieldCheck",

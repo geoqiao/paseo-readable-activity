@@ -53,3 +53,16 @@ memory and clipboard work; preserving it is intentional. No measured latency/FPS
 guarantee, native-mobile certification or promise to interpret arbitrary output
 is made. See [verification.md](verification.md) for historical live-data evidence
 and the scoped `diff` dependency advisory.
+
+## beta.4 focused icon review
+
+The implementation owner reviewed the follow-up independently of the earlier formatter work:
+the runtime diff changes one icon name and exports its existing map for exhaustive testing.
+No new resolver, fallback framework, rendering dependency or change to formatter/layout was added.
+The previous renderer mock accepted any icon string, so it could not catch the invalid
+`ListActivity` name. A pinned, test-only Lucide catalog check now covers all 62 Paseo mappings;
+normalization and renderer tests reproduce the missing icon before the fix.
+The web preview's canonical-only lookup also omitted valid aliases such as `Globe2`; its
+lookup now follows the host's named-export behavior. That was a preview mismatch, not a
+second confirmed installed-host bug. All 224 tests and the focused SVG/browser UI checks pass.
+This was a focused self-review, not another independent-agent review or native-mobile test.

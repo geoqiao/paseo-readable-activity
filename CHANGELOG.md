@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.0-beta.4
+
+- Fix the missing Get Agent Activity header icon: replace the nonexistent `ListActivity` name with the supported `Activity` glyph. Formatting, spacing, summaries and disclosure behavior are unchanged.
+- Validate all 62 configured Paseo tool icon names against Lucide 0.546.0 exports, including aliases, using a pinned test-only dependency. Production still uses the public host Icon with no added runtime dependency.
+- Add four tool-name normalization cases and two renderer regressions for icon size/color and manual disclosure through status updates. All seven new cases failed before the fix; all 224 tests now pass.
+- Browser checks cover real SVGs for all 62 mappings in wide dark/narrow light layouts, plus the existing UI suite. Local Paseo 0.8.0 reload succeeded; these browser checks are not native-mobile verification.
+
 ## 0.1.0-beta.3
 
 - Share hunk-aware classification between diff colors and counts, so source lines beginning with `+++` or `---` are not confused with file headers. Accept whitespace-stripped blank context lines; preserve other partial/malformed input with a conservative fallback.

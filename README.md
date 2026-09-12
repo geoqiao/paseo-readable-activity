@@ -6,7 +6,7 @@
 
 A Paseo plugin that makes JSON, code and tool output easier to scan — without mounting an entire long result when you open it.
 
-[Install](#install) · [Performance](#smaller-previews-less-rendering-work) · [Technical design](#technical-design) · [Latest beta](https://github.com/geoqiao/paseo-readable-activity/releases/tag/v0.1.0-beta.3)
+[Install](#install) · [Performance](#smaller-previews-less-rendering-work) · [Technical design](#technical-design) · [Latest beta](https://github.com/geoqiao/paseo-readable-activity/releases/tag/v0.1.0-beta.4)
 
 </div>
 
@@ -95,7 +95,7 @@ Verified with Paseo app, daemon and SDK **0.8.0 on macOS**. The manifest range i
 3. Install the pinned beta on your intended daemon:
 
 ```sh
-paseo plugin add geoqiao/paseo-readable-activity --ref v0.1.0-beta.3 --host <your-host>
+paseo plugin add geoqiao/paseo-readable-activity --ref v0.1.0-beta.4 --host <your-host>
 paseo plugin ls --host <your-host>
 ```
 
@@ -135,7 +135,7 @@ npm ci --ignore-scripts --legacy-peer-deps --no-audit --no-fund
 npm run check
 ```
 
-Typecheck, lint and **217 tests** cover fidelity, malformed/large data, explicit Pi Code-mode result wrappers, DSH-projected ACP content blocks, mixed block languages, status visibility, hunk-aware diffs, Unicode preview boundaries, lazy source access, icons, summaries, highlighting, clipboard races, manual folding, streaming and themes. Pinned host projection tests explicitly reproduce the unsupported Summary case; passing that test does not mean Summary is supported.
+Typecheck, lint and **224 tests** cover fidelity, malformed/large data, explicit Pi Code-mode result wrappers, DSH-projected ACP content blocks, mixed block languages, status visibility, hunk-aware diffs, Unicode preview boundaries, lazy source access, icons, summaries, highlighting, clipboard races, manual folding, streaming and themes. Paseo tool icon names are checked against the matching Lucide release, including alias exports. Pinned host projection tests explicitly reproduce the unsupported Summary case; passing that test does not mean Summary is supported.
 
 The new formatter cases use synthetic envelopes only. They cover malformed or partial wrappers,
 nonzero exits, running sessions, empty output, upstream truncation, formatting limits, multiple
