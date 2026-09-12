@@ -10,9 +10,34 @@ export const MAX_DECODE_CHARS = 1_000_000;
 
 export type ReadableValue =
   | { kind: "code"; code: string; language: "javascript"; note: string }
-  | { kind: "content"; blocks: unknown[]; language: "text"; note: string; ui?: boolean };
+  | {
+      kind: "content";
+      blocks: unknown[];
+      language: "text";
+      note: string;
+      ui?: boolean;
+      codeMode?: CodeModeMetadata;
+    };
 
-export interface TextPreview { text: string; truncated: boolean; language?: "json" }
+export type ReadableSegmentKind = "text" | "status";
+export type ReadableSegmentTone = "muted" | "warning" | "error";
+
+export interface ReadableSegment {
+  kind: ReadableSegmentKind;
+  text: string;
+  language: string;
+  separator?: string;
+  tone?: ReadableSegmentTone;
+}
+
+export interface TextPreview {
+  text: string;
+  truncated: boolean;
+  language?: string;
+  segments?: ReadableSegment[];
+  formatLimited?: boolean;
+  upstreamTruncated?: boolean;
+}
 
 export interface DetailSection {
   label: string;
@@ -34,13 +59,19 @@ export function rawValue(value: unknown): string {
   }
 }
 
-/** Change whitespace only. Preserve large numbers, key order, duplicate keys and escapes. */
-export function prettyJson(source: string): string | null {
-  if (source.length > MAX_FORMAT_CHARS || !source.trim()) return null;
+interface JsonFormat {
+  text: string | null;
+  limited: boolean;
+}
+
+function formatJson(source: string): JsonFormat {
+  if (source.length > MAX_FORMAT_CHARS || !source.trim()) {
+    return { text: null, limited: source.length > MAX_FORMAT_CHARS && looksLikeJson(source) };
+  }
   try {
     JSON.parse(source);
   } catch {
-    return null;
+    return { text: null, limited: false };
   }
   const tokens = source.match(/"(?:\\[\s\S]|[^"\\])*"|[{}[\],:]|[^\s{}[\],:]+/g) ?? [];
   let depth = 0;
@@ -67,19 +98,26 @@ export function prettyJson(source: string): string | null {
       push(token);
     }
     // Small but deeply nested input can otherwise expand into megabytes of indentation.
-    if (length > MAX_FORMAT_CHARS) return null;
+    if (length > MAX_FORMAT_CHARS) return { text: null, limited: true };
   }
-  return out.join("");
+  return { text: out.join(""), limited: false };
+}
+
+/** Change whitespace only. Preserve large numbers, key order, duplicate keys and escapes. */
+export function prettyJson(source: string): string | null {
+  return formatJson(source).text;
 }
 
 export function presentValue(value: unknown, language?: string) {
   const raw = rawValue(value);
-  const formatted = language && language !== "json" ? null : prettyJson(raw);
+  const formattedResult = language && language !== "json" ? { text: null, limited: false } : formatJson(raw);
+  const formatted = formattedResult.text;
   return {
     raw,
     text: formatted ?? raw,
     language: formatted !== null ? "json" : language ?? "text",
     canFormat: formatted !== null && formatted !== raw,
+    ...(formattedResult.limited ? { formatLimited: true } : {}),
   };
 }
 
@@ -93,6 +131,231 @@ export function previewText(text: string): TextPreview {
 
 function object(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+
+interface CodeModeMetadata {
+  status?: "running" | "yielded" | "terminated" | "result";
+  cellId?: string;
+  scriptError?: string;
+  droppedTraceCount?: number;
+}
+
+type DerivedSegment = ReadableSegment & { formatLimited?: boolean; upstreamTruncated?: boolean };
+
+interface PiExecResult {
+  chunk_id: string;
+  wall_time_seconds: number;
+  output: string;
+  exit_code?: number;
+  session_id?: number;
+  original_token_count?: number;
+}
+
+const UPSTREAM_OUTPUT_TRUNCATED = "[Output truncated]";
+const UPSTREAM_OUTPUT_WARNING = "Upstream output truncated · Show all cannot restore omitted output";
+
+function looksLikeJson(source: string): boolean {
+  return /^\s*[[{"]/.test(source.slice(0, 256));
+}
+
+function isNonNegativeFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function isInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value);
+}
+
+function ownDataValue(record: Record<string, unknown> | undefined, key: string): unknown {
+  if (!record) return undefined;
+  const descriptor = Object.getOwnPropertyDescriptor(record, key);
+  return descriptor && "value" in descriptor ? descriptor.value : undefined;
+}
+
+/** Recognize only the public Pi code-mode result shape; never search for it inside other text. */
+function parsePiExecResult(source: string): PiExecResult | undefined {
+  if (source.length > MAX_DECODE_CHARS || !looksLikeJson(source)) return undefined;
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(source);
+  } catch {
+    return undefined;
+  }
+  const record = object(decoded);
+  if (!record || typeof record.chunk_id !== "string" || !record.chunk_id
+    || !isNonNegativeFiniteNumber(record.wall_time_seconds) || typeof record.output !== "string") return undefined;
+  const hasExitCode = Object.prototype.hasOwnProperty.call(record, "exit_code");
+  const hasSessionId = Object.prototype.hasOwnProperty.call(record, "session_id");
+  if (hasExitCode === hasSessionId) return undefined;
+  if (hasExitCode && !isInteger(record.exit_code)) return undefined;
+  if (hasSessionId && !isInteger(record.session_id)) return undefined;
+  if (Object.prototype.hasOwnProperty.call(record, "original_token_count")
+    && !isNonNegativeFiniteNumber(record.original_token_count)) return undefined;
+  const exitCode = hasExitCode ? record.exit_code as number : undefined;
+  const sessionId = hasSessionId ? record.session_id as number : undefined;
+  const originalTokenCount = record.original_token_count as number | undefined;
+  return {
+    chunk_id: record.chunk_id,
+    wall_time_seconds: record.wall_time_seconds,
+    output: record.output,
+    ...(hasExitCode ? { exit_code: exitCode } : {}),
+    ...(hasSessionId ? { session_id: sessionId } : {}),
+    ...(originalTokenCount !== undefined ? { original_token_count: originalTokenCount } : {}),
+  };
+}
+
+function codeModeMetadata(value: Record<string, unknown> | undefined): CodeModeMetadata | undefined {
+  // Read only ordinary decoded JSON data. Accessor-backed metadata can contain
+  // traces or other deferred payloads and is not needed for the generic view.
+  try {
+    const details = object(ownDataValue(value, "details"));
+    if (details?.codeMode !== true) return undefined;
+    const status = details.status;
+    return {
+      ...(status === "running" || status === "yielded" || status === "terminated" || status === "result" ? { status } : {}),
+      ...(typeof details.cellId === "string" ? { cellId: details.cellId } : {}),
+      ...(typeof details.scriptError === "string" ? { scriptError: details.scriptError } : {}),
+      ...(isInteger(details.droppedTraceCount) ? { droppedTraceCount: details.droppedTraceCount } : {}),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function hasUpstreamTruncation(source: string): boolean {
+  // Pi appends this marker to the affected text item. Check the received text only;
+  // do not inspect traces or scan unrelated content blocks.
+  return source === UPSTREAM_OUTPUT_TRUNCATED || source.endsWith("\n" + UPSTREAM_OUTPUT_TRUNCATED);
+}
+
+function formatTextSegment(source: string, ui: boolean, detectUpstreamTruncation = false): DerivedSegment {
+  const formatted = formatJson(source);
+  const text = formatted.text ?? (ui ? formatUiText(source) : source);
+  return {
+    kind: "text",
+    text,
+    language: formatted.text !== null ? "json" : "text",
+    ...(formatted.limited ? { formatLimited: true } : {}),
+    ...(detectUpstreamTruncation && hasUpstreamTruncation(source) ? { upstreamTruncated: true } : {}),
+  };
+}
+
+/** Extract only the ACP content block shape projected by the DSH bridge. */
+function readableBlockText(record: Record<string, unknown> | undefined): string | undefined {
+  const type = ownDataValue(record, "type");
+  if (type === "text") {
+    const text = ownDataValue(record, "text");
+    return typeof text === "string" ? text : undefined;
+  }
+  if (type !== "content") return undefined;
+  const content = object(ownDataValue(record, "content"));
+  if (ownDataValue(content, "type") !== "text") return undefined;
+  const text = ownDataValue(content, "text");
+  return typeof text === "string" ? text : undefined;
+}
+
+function statusTone(text: string): ReadableSegmentTone {
+  if (/error|failed|exit code:\s*-[1-9]|exit code:\s*[1-9]\d*/i.test(text)) return "error";
+  if (/running|truncated|terminated|omitted/i.test(text)) return "warning";
+  return "muted";
+}
+
+function statusSegment(text: string, separator?: string, tone = statusTone(text)): DerivedSegment {
+  return { kind: "status", text, language: "text", ...(separator ? { separator } : {}), tone };
+}
+
+function isCodeModeStatusText(text: string): boolean {
+  return /^(?:Script completed|Script terminated|Script error:|Still running \(exec cell |Cell (?:#|terminated)|Session \d+ still running)/.test(text);
+}
+
+function metadataStatus(metadata: CodeModeMetadata): string | undefined {
+  if (metadata.scriptError) return "Script error: " + metadata.scriptError;
+  if (metadata.status === "yielded" || metadata.status === "running") {
+    return metadata.cellId ? `Cell #${metadata.cellId} still running` : "Cell still running";
+  }
+  if (metadata.status === "terminated") return metadata.cellId ? `Cell #${metadata.cellId} terminated` : "Cell terminated";
+  return undefined;
+}
+
+function codeModeStatusAlreadyShown(metadata: CodeModeMetadata, firstText: string | undefined): boolean {
+  if (!firstText) return false;
+  if (metadata.scriptError) {
+    const error = "Script error: " + metadata.scriptError;
+    return firstText === error || firstText.startsWith(error + "\n");
+  }
+  if (metadata.status === "running" || metadata.status === "yielded") {
+    return /^(?:Still running \(exec cell |Cell (?:#\S+ )?still running)/.test(firstText);
+  }
+  if (metadata.status === "terminated") {
+    return /^(?:Script terminated|Cell (?:#\S+ )?terminated)/.test(firstText);
+  }
+  return false;
+}
+
+function codeModePrefix(value: Extract<ReadableValue, { kind: "content" }>): DerivedSegment[] {
+  if (!value.codeMode) return [];
+  const prefix: DerivedSegment[] = [];
+  const first = object(value.blocks[0]);
+  const firstText = readableBlockText(first);
+  const status = metadataStatus(value.codeMode);
+  if (status && !codeModeStatusAlreadyShown(value.codeMode, firstText)) {
+    prefix.push(statusSegment(status));
+  }
+  if (value.codeMode.droppedTraceCount && value.codeMode.droppedTraceCount > 0) {
+    const count = value.codeMode.droppedTraceCount;
+    const traceStatus = statusSegment(`Trace data truncated · ${count} ${count === 1 ? "entry" : "entries"} omitted`, prefix.length ? "\n" : undefined);
+    prefix.push(traceStatus);
+  }
+  return prefix;
+}
+
+function execResultSegments(result: PiExecResult): DerivedSegment[] {
+  const running = result.session_id !== undefined;
+  const status = running ? `Session ${result.session_id} still running` : `Exit code: ${result.exit_code}`;
+  const outputTruncated = hasUpstreamTruncation(result.output);
+  const segments: DerivedSegment[] = [statusSegment(status)];
+  // Keep this warning before a long body so it remains visible, participates in
+  // the shared budget, and is included in complete Readable copies.
+  if (outputTruncated) segments.push(statusSegment(UPSTREAM_OUTPUT_WARNING, "\n", "warning"));
+  if (result.output) {
+    const output = formatTextSegment(result.output, false, true);
+    output.separator = "\n";
+    segments.push(output);
+  } else {
+    segments[0]!.text += running ? " · No output yet" : " · Empty output";
+  }
+  return segments;
+}
+
+function readableBlockSegments(
+  value: Extract<ReadableValue, { kind: "content" }>,
+  block: unknown,
+  index: number,
+): DerivedSegment[] {
+  const record = object(block);
+  const text = readableBlockText(record);
+  if (text !== undefined) {
+    if (value.codeMode) {
+      const result = parsePiExecResult(text);
+      if (result) return execResultSegments(result);
+      const segment = formatTextSegment(text, value.ui === true, true);
+      if (index === 0 && isCodeModeStatusText(text)) {
+        segment.kind = "status";
+        segment.tone = statusTone(text);
+      }
+      // Partial JSON cannot be decoded, but Pi's explicit final truncation marker
+      // must still be visible before the long literal fallback body.
+      if (segment.upstreamTruncated) return [statusSegment(UPSTREAM_OUTPUT_WARNING, undefined, "warning"), { ...segment, separator: "\n" }];
+      return [segment];
+    }
+    return [formatTextSegment(text, value.ui === true) as DerivedSegment];
+  }
+  // Non-text blocks and extra fields are explicitly retained in Raw, never fetched/executed.
+  const typeValue = ownDataValue(record, "type");
+  const mimeValue = ownDataValue(record, "mimeType");
+  const type = typeof typeValue === "string" ? typeValue.slice(0, 40) : "Unknown block";
+  const mime = typeof mimeValue === "string" ? " · " + mimeValue.slice(0, 80) : "";
+  return [{ kind: "text", text: "[" + type + mime + " · data in Raw]", language: "text" }];
 }
 
 /** Decode only known transport containers; never recursively reinterpret arbitrary string fields. */
@@ -114,40 +377,111 @@ export function readableValue(value: unknown, toolName?: string, direction = too
   const blocks = ui && typeof value === "string" && !record ? [{ type: "text", text: value }] : record?.content;
   // A typed content array is the explicit tool-result contract, not a random { text } object.
   if (!Array.isArray(blocks) || (blocks.length > 0 && typeof object(blocks[0])?.type !== "string")) return undefined;
-  return { kind: "content", blocks, language: "text", ...(ui ? { ui } : {}), note: ui
-    ? "UI view · Labels expanded; paths compacted. Full response and attachments in Raw"
-    : "Readable content · Full response, metadata and attachments in Raw" };
+  const codeMode = codeModeMetadata(record);
+  return { kind: "content", blocks, language: "text", ...(ui ? { ui } : {}), ...(codeMode ? { codeMode } : {}), note: codeMode
+    ? "Code mode · Nested exec output expanded one layer. Full response, metadata and attachments in Raw"
+    : ui
+      ? "UI view · Labels expanded; paths compacted. Full response and attachments in Raw"
+      : "Readable content · Full response, metadata and attachments in Raw" };
+}
+
+function publicSegment(segment: DerivedSegment, text = segment.text, separator = segment.separator): ReadableSegment {
+  return {
+    kind: segment.kind,
+    text,
+    language: segment.language,
+    ...(separator ? { separator } : {}),
+    ...(segment.tone ? { tone: segment.tone } : {}),
+  };
+}
+
+interface AppendResult {
+  text: string;
+  complete: boolean;
+}
+
+/** Append one segment while keeping the aggregate preview bounded. */
+function appendPreviewSegment(
+  text: string,
+  segment: DerivedSegment,
+  separator: string,
+  all: boolean,
+  output: ReadableSegment[],
+): AppendResult {
+  const actualSeparator = segment.separator ?? separator;
+  if (all) {
+    output.push(publicSegment(segment, segment.text, actualSeparator));
+    return { text: text + actualSeparator + segment.text, complete: true };
+  }
+
+  // Only take a small prefix from this segment. The accumulated text is already
+  // bounded, so this cannot turn a many-block preview into a per-block budget.
+  const source = actualSeparator + segment.text;
+  const candidate = text + source.slice(0, PREVIEW_CHARS + 1);
+  const preview = previewText(candidate);
+  const visible = preview.text.startsWith(text) ? preview.text.slice(text.length) : preview.text;
+  if (visible) {
+    const separatorShown = actualSeparator && visible.startsWith(actualSeparator) ? actualSeparator : undefined;
+    output.push(publicSegment(segment, separatorShown ? visible.slice(separatorShown.length) : visible, separatorShown));
+  }
+  const complete = source.length <= PREVIEW_CHARS + 1 && !preview.truncated && visible.length === source.length;
+  return { text: preview.text, complete };
+}
+
+function resultHasSegments(value: Extract<ReadableValue, { kind: "content" }>, segments: ReadableSegment[]): boolean {
+  return !!value.codeMode || value.blocks.length > 1 || segments.length > 1;
 }
 
 /** One preview budget across ALL blocks; do not serialize images/metadata or scan the tail eagerly. */
 export function renderReadable(value: ReadableValue, all = false): TextPreview {
   if (value.kind === "code") return all ? { text: value.code, truncated: false } : previewText(value.code);
-  if (!value.blocks.length) return { text: "", truncated: false };
+
+  const segments: ReadableSegment[] = [];
   let text = "";
-  let language: "json" | undefined;
-  for (let i = 0; i < value.blocks.length; i++) {
-    // Respect an exhausted budget before reading even the next block.
-    const separator = i ? "\n\n" : "";
-    if (!all && previewText(text + separator + "x").truncated) return { text: previewText(text + separator).text, truncated: true };
-    const block = object(value.blocks[i]);
-    let part: string;
-    if (block?.type === "text" && typeof block.text === "string") {
-      // Formatting changes lexical whitespace only. Embedded non-JSON text keeps its real newlines.
-      const json = prettyJson(block.text);
-      if (json !== null && value.blocks.length === 1) language = "json";
-      part = json ?? (value.ui ? formatUiText(block.text) : block.text);
-    } else {
-      // Non-text blocks and extra fields are explicitly retained in Raw, never fetched/executed.
-      const type = typeof block?.type === "string" ? block.type.slice(0, 40) : "Unknown block";
-      const mime = typeof block?.mimeType === "string" ? " · " + block.mimeType.slice(0, 80) : "";
-      part = "[" + type + mime + " · data in Raw]";
-    }
-    if (all) { text += separator + part; continue; }
-    const preview = previewText(text + separator + part.slice(0, PREVIEW_CHARS + 1));
-    text = preview.text;
-    if (preview.truncated || part.length > PREVIEW_CHARS) return { text, truncated: true, ...(language ? { language } : {}) };
+  let truncated = false;
+  let formatLimited = false;
+  let upstreamTruncated = false;
+  let hasPart = false;
+  const append = (segment: DerivedSegment, separator: string) => {
+    formatLimited ||= segment.formatLimited === true;
+    upstreamTruncated ||= segment.upstreamTruncated === true;
+    const result = appendPreviewSegment(text, segment, separator, all, segments);
+    text = result.text;
+    hasPart = true;
+    if (!result.complete && !all) truncated = true;
+    return result.complete;
+  };
+
+  for (const [index, segment] of codeModePrefix(value).entries()) {
+    if (!append(segment, index ? "\n" : "")) return readableResult(value, text, true, segments, formatLimited, upstreamTruncated);
   }
-  return { text, truncated: false, ...(language ? { language } : {}) };
+  for (let index = 0; index < value.blocks.length; index++) {
+    const blockSegments = readableBlockSegments(value, value.blocks[index], index);
+    for (let segmentIndex = 0; segmentIndex < blockSegments.length; segmentIndex++) {
+      const segment = blockSegments[segmentIndex]!;
+      const separator = segmentIndex === 0 ? (hasPart ? "\n\n" : "") : "\n";
+      if (!append(segment, separator)) return readableResult(value, text, true, segments, formatLimited, upstreamTruncated);
+    }
+  }
+  return readableResult(value, text, truncated, segments, formatLimited, upstreamTruncated);
+}
+
+function readableResult(
+  value: Extract<ReadableValue, { kind: "content" }>,
+  text: string,
+  truncated: boolean,
+  segments: ReadableSegment[],
+  formatLimited: boolean,
+  upstreamTruncated: boolean,
+): TextPreview {
+  const result: TextPreview = { text, truncated };
+  if (segments.length === 1 && segments[0]!.kind === "text" && segments[0]!.language === "json" && !segments[0]!.separator) {
+    result.language = "json";
+  }
+  if (resultHasSegments(value, segments)) result.segments = segments;
+  if (formatLimited) result.formatLimited = true;
+  if (upstreamTruncated) result.upstreamTruncated = true;
+  return result;
 }
 
 /** Host-validated detail is still treated defensively for history/provider evolution. */

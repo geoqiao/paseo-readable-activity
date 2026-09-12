@@ -275,6 +275,106 @@ describe.each([
     expect(displayed(renderer)).not.toContain("tree line 99");
   });
 
+  it("renders the DSH-projected ACP content wrapper without recursive unwrapping", async () => {
+    const output = {
+      content: [
+        { type: "content", content: { type: "text", text: "real\nbody" } },
+        { type: "content", content: { type: "image", mimeType: "image/png", data: "synthetic-image" } },
+        { type: "content", content: { type: "text", text: '{"ok":true}' } },
+      ],
+    };
+    const data = { ...toolData("completed"), name: "dsh", detail: { type: "unknown" as const, input: {}, output } };
+    const renderer = await mount(<ToolActivity {...props(data as unknown as ToolCallItemData)} />);
+    await click(renderer);
+    expect(displayed(renderer)).toContain("real\nbody");
+    expect(displayed(renderer)).toContain("[content · data in Raw]");
+    expect(displayed(renderer)).toContain('"ok": true');
+    await press(renderer, "Copy Output");
+    expect(copyText).toHaveBeenLastCalledWith('real\nbody\n\n[content · data in Raw]\n\n{\n  "ok": true\n}');
+    await press(renderer, "Show raw Output");
+    await press(renderer, "Copy Output");
+    expect(JSON.parse(vi.mocked(copyText).mock.lastCall![0])).toEqual(output);
+  });
+
+  it("renders code-mode results as status and language-aware segments with one shared budget", async () => {
+    const longOutput = Array.from({ length: 40 }, (_, index) => "nested line " + index).join("\n") + "\n[Output truncated]";
+    const output = {
+      content: [
+        { type: "text", text: "Script completed" },
+        { type: "text", text: JSON.stringify({ chunk_id: "first", wall_time_seconds: 0.3, output: longOutput, exit_code: 7 }) },
+        { type: "image", mimeType: "image/png", data: "B64" },
+        { type: "text", text: JSON.stringify({ chunk_id: "second", wall_time_seconds: 0.1, output: '{"ok":true}', exit_code: 0 }) },
+        { type: "resource", uri: "https://example.invalid/never-fetch" },
+      ],
+      details: { codeMode: true, status: "result" },
+    };
+    const data = { ...toolData("completed"), name: "exec", detail: { type: "unknown" as const, input: {}, output } };
+    const renderer = await mount(<ToolActivity {...props(data as unknown as ToolCallItemData)} />);
+    await click(renderer);
+    expect(displayed(renderer)).toContain("Script completed");
+    expect(displayed(renderer)).toContain("Exit code: 7");
+    expect(renderer.root.findAll(node => String(node.type) === "Text" && node.children.length === 1 && typeof node.children[0] === "string" && /^\n+$/.test(node.children[0]))).toHaveLength(0);
+    expect(displayed(renderer)).toContain("nested line 0");
+    expect(displayed(renderer)).not.toContain("nested line 39");
+    expect(displayed(renderer).match(/Upstream output truncated · Show all cannot restore omitted output/g)).toHaveLength(1);
+    expect(displayed(renderer)).not.toContain("Exit code: 0");
+    expect(displayed(renderer)).toContain("Preview limit");
+    expect(vi.mocked(useShikiTokens).mock.calls.some(([code, language]) => language === "json" && code.includes('"ok": true'))).toBe(false);
+    await press(renderer, "Show all Output");
+    expect(displayed(renderer)).toContain("nested line 39");
+    expect(displayed(renderer)).toContain('"ok": true');
+    expect(displayed(renderer)).toContain("image/png · data in Raw");
+    expect(vi.mocked(useShikiTokens).mock.calls.some(([code, language]) => language === "json" && code.includes('"ok": true'))).toBe(true);
+    await press(renderer, "Copy Output");
+    expect(copyText).toHaveBeenLastCalledWith(expect.stringContaining("nested line 39"));
+    expect(copyText).toHaveBeenLastCalledWith(expect.not.stringContaining('"chunk_id"'));
+    expect(vi.mocked(copyText).mock.lastCall![0].match(/Upstream output truncated · Show all cannot restore omitted output/g)).toHaveLength(1);
+    await press(renderer, "Show raw Output");
+    await press(renderer, "Copy Output");
+    expect(JSON.parse(vi.mocked(copyText).mock.lastCall![0])).toEqual(output);
+  });
+
+  it("keeps code-mode disclosure, Raw mode and complete selected-view copies through streaming", async () => {
+    const makeOutput = (tail: string) => ({
+      content: [
+        { type: "text", text: "Still running (exec cell \"cell-1\"). Use wait once near expected completion; avoid short polling" },
+        { type: "text", text: JSON.stringify({ chunk_id: "running", wall_time_seconds: 0.2, output: "start\n" + tail, session_id: 21 }) },
+      ],
+      details: { codeMode: true, status: "yielded", cellId: "cell-1" },
+    });
+    const longTail = Array.from({ length: 500 }, (_, index) => "line " + index).join("\n");
+    const first = { ...toolData("running"), name: "exec", detail: { type: "unknown" as const, input: {}, output: makeOutput(longTail) } };
+    const renderer = await mount(<ToolActivity {...props(first as unknown as ToolCallItemData)} />);
+    await click(renderer);
+    await press(renderer, "Show all Output");
+    await press(renderer, "Show raw Output");
+    expect(displayed(renderer)).toContain("chunk_id");
+    const second = {
+      ...first,
+      status: "completed" as const,
+      detail: {
+        ...first.detail,
+        output: {
+          ...makeOutput("first\nsecond"),
+          content: [
+            ...makeOutput(longTail + "\nsecond").content,
+            { type: "text", text: JSON.stringify({ chunk_id: "done", wall_time_seconds: 0.1, output: "tail", exit_code: 0 }) },
+          ],
+          details: { codeMode: true, status: "result" },
+        },
+      },
+    };
+    await act(async () => renderer.update(<ToolActivity {...props(second as unknown as ToolCallItemData)} />));
+    expect(labels(renderer)).toEqual(["Collapse Test tool"]);
+    expect(renderer.root.findByProps({ accessibilityLabel: "Show less Output" })).toBeTruthy();
+    expect(displayed(renderer)).toContain("chunk_id");
+    await press(renderer, "Copy Output");
+    expect(JSON.parse(vi.mocked(copyText).mock.lastCall![0])).toEqual(second.detail.output);
+    await press(renderer, "Format Output");
+    expect(displayed(renderer)).toContain("Exit code: 0");
+    expect(renderer.root.findByProps({ accessibilityLabel: "Show less Output" })).toBeTruthy();
+  });
+
   it("does not leak stale clipboard success/failure across a stream or Raw change", async () => {
     let reject!: (error: Error) => void;
     vi.mocked(copyText).mockImplementationOnce(() => new Promise((_, fail) => { reject = fail; }));

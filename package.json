@@ -1,11 +1,22 @@
 {
   "name": "readable-agent-activity",
-  "version": "0.1.0-beta.1",
+  "version": "0.1.0-beta.2",
   "description": "Readable tool calls and reasoning for Paseo 0.8: quiet headers, code and JSON, bounded previews. Full detail only.",
-  "repository": { "type": "git", "url": "https://github.com/geoqiao/paseo-readable-activity.git" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/geoqiao/paseo-readable-activity.git"
+  },
   "homepage": "https://github.com/geoqiao/paseo-readable-activity#readme",
-  "bugs": { "url": "https://github.com/geoqiao/paseo-readable-activity/issues" },
-  "keywords": ["paseo", "paseo-plugin", "tool-calls", "json", "readability"],
+  "bugs": {
+    "url": "https://github.com/geoqiao/paseo-readable-activity/issues"
+  },
+  "keywords": [
+    "paseo",
+    "paseo-plugin",
+    "tool-calls",
+    "json",
+    "readability"
+  ],
   "license": "MIT",
   "private": true,
   "type": "module",

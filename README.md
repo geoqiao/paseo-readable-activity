@@ -6,7 +6,7 @@
 
 A Paseo plugin that makes JSON, code and tool output easier to scan — without mounting an entire long result when you open it.
 
-[Install](#install) · [Performance](#smaller-previews-less-rendering-work) · [Technical design](#technical-design) · [Latest beta](https://github.com/geoqiao/paseo-readable-activity/releases/tag/v0.1.0-beta.1)
+[Install](#install) · [Performance](#smaller-previews-less-rendering-work) · [Technical design](#technical-design) · [Latest beta](https://github.com/geoqiao/paseo-readable-activity/releases/tag/v0.1.0-beta.2)
 
 </div>
 
@@ -39,11 +39,22 @@ A Paseo plugin that makes JSON, code and tool output easier to scan — without 
 
 - **JSON:** indented, syntax-highlighted output instead of a dense blob.
 - **Code:** known JavaScript inputs render as literal source, not a string buried in JSON.
-- **Tool responses:** typed `content` envelopes expose their text; attachments and metadata remain available in Raw.
+- **Tool responses:** typed `content` envelopes expose their text; DSH-projected ACP blocks with `type: "content"` and nested text are extracted one layer; attachments, unknown blocks and metadata remain available in Raw.
+- **Pi Code mode:** an outer envelope marked `details.codeMode === true` can expose a direct, schema-validated `exec_command` result as its status plus output. This unwraps exactly one layer; exit codes, running sessions and upstream truncation stay visible.
 - **UI output:** complete quoted labels decode one layer into readable lines. Repeated paths become `AXWindow ▸ AXGroup × 22 ▸ AXStaticText`.
 - **Quiet headers:** specialized icons and bounded, single-line summaries. Native messages, approvals and composer stay native.
 
 **Readable is a view, not a replacement for your data.** Raw retains the complete received response. Copy always copies the **full selected representation**, not just the visible preview: derived text in Readable, complete response in Raw.
+
+<details>
+<summary>Nested command output: visible exit status, real lines, preserved escapes</summary>
+
+![Pi Code-mode result rendered as compact status and multiline stdout, with a bounded preview](images/readable-exec.png)
+
+*Production components, synthetic data. `Script completed` describes the outer JavaScript;
+`Exit code: 2` describes the nested command. The plugin does not mistake one for the other.*
+
+</details>
 
 ### Smaller previews, less rendering work
 
@@ -59,7 +70,7 @@ Complete content
 Back to the preview
 ```
 
-The preview bounds the text mounted in each detail section and reasoning body. Tools and Thinking also start collapsed, and streaming never opens them for you. A 100,000-line regression case verifies the default preview stays bounded.
+The preview bounds the text mounted in each detail section and reasoning body. One **20-line / 4,000-character budget** is shared across every status, text, JSON and unknown-block segment in a result; it does not restart per block. Tools and Thinking also start collapsed, and streaming never opens them for you. A 100,000-line regression case verifies the default preview stays bounded.
 
 This reduces the initial rendering work; **it is not a guarantee of zero lag**. Show all deliberately removes the preview limit. Full Raw, copying, host storage and serialization can still be expensive. The limit counts newline-separated lines, so wrapping can occupy more than 20 visual lines. No pagination, hidden truncation of the source, or claimed FPS benchmark.
 
@@ -84,7 +95,7 @@ Verified with Paseo app, daemon and SDK **0.8.0 on macOS**. The manifest range i
 3. Install the pinned beta on your intended daemon:
 
 ```sh
-paseo plugin add geoqiao/paseo-readable-activity --ref v0.1.0-beta.1 --host <your-host>
+paseo plugin add geoqiao/paseo-readable-activity --ref v0.1.0-beta.2 --host <your-host>
 paseo plugin ls --host <your-host>
 ```
 
@@ -105,13 +116,13 @@ The implementation keeps the renderer small and predictable: **public SDK contri
 | Design | Why it matters |
 | --- | --- |
 | **Lexical JSON formatting** | Changes whitespace while preserving received number spellings, duplicate keys, key order and escapes. Structured objects have already lost their original source whitespace. |
-| **Explicit format recognition** | Only known code fields, typed content envelopes and recognized UI labels get special treatment. No source execution, guessed inner tool calls or global backslash replacement. |
+| **Explicit format recognition** | Only known code fields, typed content envelopes (including the DSH ACP one-layer text projection), the marked Pi Code-mode exec-result shape and recognized UI labels get special treatment. No source execution, guessed inner tool calls, recursive field walking or global backslash replacement. |
 | **Separate work limits** | Formatting input/output and highlighting are capped at 100,000 characters; serialized envelope decoding at 1,000,000. Oversized or unrecognized text falls back to literal content. |
 | **Local, manual disclosure** | Expansion and Show all survive streaming/status/theme updates while mounted. Virtual-list remounts reset them; the plugin does not infer host preferences from private storage. |
 | **Host-native building blocks** | React Native primitives, public host icons and theme colors. Desktop spacing accounts for Paseo's external row gap; compact mode keeps 44px touch targets. |
 | **Presentation-only lifecycle** | No server entry, runtime network requests, process execution or filesystem access. Contributions unregister on cleanup; clipboard writes happen only after Copy. |
 
-Non-text attachments are not eagerly loaded or serialized into the default readable preview. Raw retains them. Async clipboard results are invalidated when the source changes, so an old copy operation cannot report success for new content.
+Non-text attachments, metadata and trace payloads are not eagerly loaded or serialized into the default readable preview. Unknown blocks remain as bounded placeholders and the complete received envelope stays in Raw. A Pi upstream `[Output truncated]` marker is reported as upstream truncation; Show all cannot recreate omitted data. Async clipboard results are invalidated when the source changes, so an old copy operation cannot report success for new content.
 
 <details>
 <summary><strong>Development, tests and known gaps</strong></summary>
@@ -123,7 +134,13 @@ npm ci --ignore-scripts --legacy-peer-deps --no-audit --no-fund
 npm run check
 ```
 
-Typecheck, lint and **187 tests** cover fidelity, malformed/large data, icons, summaries, highlighting, clipboard races, manual folding, streaming and themes. Pinned host projection tests explicitly reproduce the unsupported Summary case; passing that test does not mean Summary is supported.
+Typecheck, lint and **202 tests** cover fidelity, malformed/large data, explicit Pi Code-mode result wrappers, DSH-projected ACP content blocks, mixed block languages, status visibility, icons, summaries, highlighting, clipboard races, manual folding, streaming and themes. Pinned host projection tests explicitly reproduce the unsupported Summary case; passing that test does not mean Summary is supported.
+
+The new formatter cases use synthetic envelopes only. They cover malformed or partial wrappers,
+nonzero exits, running sessions, empty output, upstream truncation, formatting limits, multiple
+results, lazy unknown/image tails, one-layer DSH ACP text extraction with mixed non-text blocks and
+a shared preview budget, and complete selected-view copies. No live conversation payloads are stored
+in the plugin.
 
 The wider browser harness checks dark/light themes, compact layout, keyboard controls, overflow and large-output previews. It is not a native mobile test. A full reconnect/enable-disable matrix and a latency/FPS benchmark remain outstanding.
 
