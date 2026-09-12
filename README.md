@@ -1,3 +1,6 @@
+> [!IMPORTANT]
+> **This plugin has moved to [geoqiao/paseo-stuff → plugins/agent-activity](https://github.com/geoqiao/paseo-stuff/tree/main/plugins/agent-activity).** New development, issues and releases belong there. The plugin ID remains `readable-agent-activity`. This repository and its existing tags are retained for earlier installations; the content below describes those historical releases. Existing Git installations do not switch remotes automatically. Read the [migration notes](https://github.com/geoqiao/paseo-stuff/blob/main/MIGRATION.md) before changing sources; avoid duplicate installations and preserve intentional disablement.
+
 <div align="center">
 
 # Readable Agent Activity
