@@ -23,4 +23,4 @@ The prepared entry prominently discloses the Full detail-only beta limitation. `
 > macOS host smoke checks and browser compact tests are documented; native mobile is untested.
 > The registry entry includes these caveats. Source, upstream provenance, tests and synthetic screenshots are in the public repository.
 
-**Status:** entry prepared, not submitted or accepted. A release here is not evidence of catalog inclusion.
+**Status:** submitted as [paseo-cafe/paseo-cafe#86](https://github.com/paseo-cafe/paseo-cafe/pull/86). The PR is open and awaiting review. Upstream CI and Registry validation currently require maintainer approval to run for this fork contribution; local registry validation passed for all 59 entries. Submission is not acceptance or catalog inclusion.

@@ -135,4 +135,4 @@ Run checks before installing or reloading an explicit target host; do not auto-e
 
 An MIT fork of Matt Cowger's [Colorful Agent Activity](https://github.com/mcowger/paseo-plugins/tree/91058be73840ae11b130b6bb7d34b07652462217/colorful-agent-activity). Original copyright retained; see [LICENSE](LICENSE) and exact [upstream provenance](UPSTREAM.md). Vendored Paseo test fixtures retain their separate Apache-2.0 license.
 
-GitHub-only publication; no npm release. [paseo.cafe submission preparation](docs/catalog.md) — not yet submitted or listed.
+GitHub-only publication; no npm release. [paseo.cafe submission PR #86](https://github.com/paseo-cafe/paseo-cafe/pull/86) is open and awaiting review; the plugin is not yet listed. [Submission details](docs/catalog.md).
