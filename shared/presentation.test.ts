@@ -1,0 +1,168 @@
+import { describe, expect, it } from "vitest";
+import {
+  diffLinesForDetail,
+  diffStatsFromStrings,
+  diffStatsFromUnifiedDiff,
+  fileIconForPath,
+  formatReasoningText,
+  languageForFilePath,
+  paseoToolCategory,
+  paseoToolIcon,
+  paseoToolLabel,
+  paseoToolLeafName,
+  paseoToolSummary,
+  paseoToolResult,
+  unwrapPaseoToolOutput,
+  resolveToolCallPresentation,
+} from "./presentation";
+
+describe("colorful activity presentation", () => {
+  it("maps file extensions to icons and Shiki languages", () => {
+    expect(fileIconForPath("src/web/main.tsx")).toBe("FileCode2");
+    expect(fileIconForPath("package.json")).toBe("FileJson");
+    expect(fileIconForPath("README.md")).toBe("FileText");
+    expect(fileIconForPath(".env")).toBe("FileKey2");
+    expect(languageForFilePath("src/web/main.tsx")).toBe("typescript");
+    expect(languageForFilePath("styles.css")).toBe("css");
+  });
+
+  it("counts unified diff additions and deletions without file headers", () => {
+    expect(
+      diffStatsFromUnifiedDiff("--- a/main.ts\n+++ b/main.ts\n@@ -1 +1 @@\n-old\n+new\n"),
+    ).toEqual({ additions: 1, deletions: 1 });
+  });
+
+  it("counts changes when an edit only has old and new strings", () => {
+    expect(diffStatsFromStrings("one\ntwo\n", "one\nthree\n")).toEqual({
+      additions: 1,
+      deletions: 1,
+    });
+  });
+
+  it("creates colored diff rows from old and new strings", () => {
+    expect(
+      diffLinesForDetail({
+        type: "edit",
+        filePath: "main.ts",
+        oldString: "const oldValue = 1;\n",
+        newString: "const newValue = 2;\n",
+      }),
+    ).toEqual([
+      { kind: "remove", text: "const oldValue = 1;" },
+      { kind: "add", text: "const newValue = 2;" },
+    ]);
+  });
+
+  it("maps known tool details to screenshot-style presentation", () => {
+    expect(
+      resolveToolCallPresentation({
+        name: "edit",
+        detail: { type: "edit", filePath: "src/web/main.tsx", oldString: "", newString: "x" },
+      }),
+    ).toMatchObject({
+      category: "file",
+      icon: "FileCode2",
+      label: "Edit",
+      summary: "src/web/main.tsx",
+      language: "typescript",
+      diffStats: { additions: 1, deletions: 0 },
+    });
+    expect(
+      resolveToolCallPresentation({
+        name: "bash",
+        detail: { type: "shell", command: "bun run typecheck && bun test" },
+      }),
+    ).toEqual({
+      category: "shell",
+      icon: "SquareTerminal",
+      label: "Exec",
+      summary: "bun run typecheck && bun test",
+    });
+  });
+
+  it("gives namespaced Paseo tools a specialized title, icon, and summary", () => {
+    const input = {
+      title: "Random Number Agent 3",
+      provider: "pi/plexus/gpt-5.6-luna",
+    };
+    expect(paseoToolLabel("mcp__paseo__create_agent")).toBe("Create Agent");
+    expect(paseoToolLabel("mcp_paseo_create_agent")).toBe("Create Agent");
+    expect(paseoToolIcon("paseo.create_agent")).toBe("Bot");
+    expect(paseoToolLeafName("paseo_create_agent")).toBe("create_agent");
+    expect(paseoToolLeafName("mcp_paseo_create_agent")).toBe("create_agent");
+    expect(paseoToolLeafName("mcp__paseo__future_tool")).toBeNull();
+    expect(paseoToolCategory("paseo_remote.create_agent")).toBe("agent");
+    expect(paseoToolSummary("mcp__paseo__create_agent", input)).toBe(
+      "Random Number Agent 3 · pi/plexus/gpt-5.6-luna",
+    );
+    expect(paseoToolLabel("mcp__github__create_issue")).toBeNull();
+    expect(
+      resolveToolCallPresentation({
+        name: "mcp_paseo_create_agent",
+        detail: { type: "unknown", input, output: { agentId: "agt_123" } },
+      }),
+    ).toMatchObject({
+      category: "agent",
+      icon: "Bot",
+      label: "Paseo Create Agent",
+      summary: "Random Number Agent 3 · pi/plexus/gpt-5.6-luna",
+    });
+    expect(
+      resolveToolCallPresentation({
+        name: "mcp__github__search_repositories",
+        detail: { type: "unknown", input: { query: "paseo" }, output: {} },
+      }),
+    ).toMatchObject({
+      category: "search",
+      icon: "BookMarked",
+      label: "GitHub Repository Search",
+      summary: "paseo",
+    });
+    expect(
+      resolveToolCallPresentation({
+        name: "mcp__paseo__create_agent",
+        detail: { type: "unknown", input, output: { agentId: "agt_123" } },
+      }),
+    ).toMatchObject({
+      category: "agent",
+      icon: "Bot",
+      label: "Paseo Create Agent",
+      summary: "Random Number Agent 3 · pi/plexus/gpt-5.6-luna",
+    });
+  });
+
+  it("unwraps MCP text envelopes with diagnostic prefixes", () => {
+    const output = {
+      content: [
+        {
+          type: "text",
+          text: 'availableModes_count=0\\n\\n{"agentId":"agt_123","status":"running"}',
+        },
+      ],
+    };
+    expect(unwrapPaseoToolOutput(output)).toEqual({
+      agentId: "agt_123",
+      status: "running",
+    });
+    expect(paseoToolResult({ ok: true, result: { browserId: "tab-1" } })).toEqual({
+      browserId: "tab-1",
+    });
+    expect(
+      paseoToolResult({
+        ok: false,
+        error: { code: "browser_timeout", message: "Timed out" },
+      }),
+    ).toEqual({
+      ok: false,
+      error: { code: "browser_timeout", message: "Timed out" },
+    });
+  });
+
+  it("keeps reasoning formatting outside code spans", () => {
+    expect(formatReasoningText("**Plan****Result**\n\n`**inline**`")).toBe(
+      "**Plan**\n\n**Result**\n\n`**inline**`",
+    );
+  });
+
+
+});
