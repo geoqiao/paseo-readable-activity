@@ -3,6 +3,7 @@ import type { JsonValue, ToolCallDetail, ToolCallTimelineItem } from "@getpaseo/
 import { getPaseoToolLeafName } from "@getpaseo/protocol/tool-name-normalization";
 import { exaToolIcon, exaToolKind, exaToolLabel, exaToolSummary } from "./exa";
 import { inputPresentation } from "./input-presentation";
+import { compactText } from "./summary";
 import {
   githubToolIcon,
   githubToolKind,
@@ -139,12 +140,6 @@ const TOOL_ICON_NAMES: Record<string, string> = {
   square_terminal: "SquareTerminal",
   wrench: "Wrench",
 };
-
-function compactText(value: string, maxLength = 180): string | undefined {
-  const normalized = value.slice(0, maxLength * 4).replace(/\s+/g, " ").trim();
-  if (!normalized) return undefined;
-  return normalized.length > maxLength || value.length > maxLength * 4 ? `${normalized.slice(0, maxLength - 1)}…` : normalized;
-}
 
 function fileName(filePath: string): string {
   return filePath.split(/[\\/]/).at(-1)?.toLowerCase() ?? filePath.toLowerCase();
@@ -387,56 +382,104 @@ export function paseoToolSummary(toolName: string, input: unknown): string | und
   return undefined;
 }
 
-function parseEmbeddedJson(value: string): unknown {
-  try {
-    return JSON.parse(value) as unknown;
-  } catch {
-    for (const match of value.matchAll(/\{|\[/g)) {
-      const offset = match.index;
-      if (offset === undefined) continue;
-      try {
-        return JSON.parse(value.slice(offset)) as unknown;
-      } catch {
-        continue;
-      }
-    }
-    return undefined;
-  }
-}
-
-export function unwrapPaseoToolOutput(value: unknown): unknown {
-  const record = isRecord(value) ? value : null;
-  if (!record) return value;
-  if (record.structuredContent !== undefined) return unwrapPaseoToolOutput(record.structuredContent);
-  if (Array.isArray(record.content)) {
-    const content = record.content.find((item) => isRecord(item) && item.type === "text");
-    if (isRecord(content)) {
-      const parsed = typeof content.text === "string" ? parseEmbeddedJson(content.text) : undefined;
-      return parsed === undefined ? content.text : unwrapPaseoToolOutput(parsed);
-    }
-  }
-  return value;
-}
-
-export function paseoToolResult(value: unknown): unknown {
-  const unwrapped = unwrapPaseoToolOutput(value);
-  const record = isRecord(unwrapped) ? unwrapped : null;
-  return record?.ok === true && record.result !== undefined ? record.result : unwrapped;
-}
-
 function countLines(value: string): number {
   if (!value) return 0;
   const lines = value.replace(/\r/g, "").split("\n");
   return lines.at(-1) === "" ? lines.length - 1 : lines.length;
 }
 
+interface UnifiedHunkRange {
+  oldRemaining: number;
+  newRemaining: number;
+}
+
+const NO_NEWLINE_MARKER = "\\ No newline at end of file";
+const UNIFIED_HUNK_HEADER = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?: .*)?$/;
+
+function parseUnifiedHunkRange(line: string): UnifiedHunkRange | null {
+  const match = line.match(UNIFIED_HUNK_HEADER);
+  if (!match) return null;
+  const count = (value: string | undefined): number | null => {
+    const parsed = value === undefined ? 1 : Number(value);
+    return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+  };
+  const oldRemaining = count(match[2]);
+  const newRemaining = count(match[4]);
+  return oldRemaining === null || newRemaining === null ? null : { oldRemaining, newRemaining };
+}
+
+function isUnifiedFileHeader(line: string): boolean {
+  return /^(?:---|\+\+\+)[ \t]/.test(line);
+}
+
+function classifyOutsideUnifiedLine(line: string): DiffLine {
+  if (
+    isUnifiedFileHeader(line)
+    || line.startsWith("@@")
+    || line === NO_NEWLINE_MARKER
+    || line.startsWith("diff ")
+    || line.startsWith("index ")
+    || line.startsWith("new file mode ")
+    || line.startsWith("deleted file mode ")
+    || line.startsWith("similarity index ")
+    || line.startsWith("rename from ")
+    || line.startsWith("rename to ")
+  ) {
+    return { kind: "meta", text: line };
+  }
+  // A prefix outside a valid hunk is not enough evidence to call it a change.
+  return { kind: "context", text: line };
+}
+
+function classifyUnifiedHunkLine(line: string, hunk: UnifiedHunkRange): DiffLine | null {
+  if (line === NO_NEWLINE_MARKER) return { kind: "meta", text: line };
+  if (line.startsWith("+") && hunk.newRemaining > 0) {
+    hunk.newRemaining -= 1;
+    return { kind: "add", text: line.slice(1) };
+  }
+  if (line.startsWith("-") && hunk.oldRemaining > 0) {
+    hunk.oldRemaining -= 1;
+    return { kind: "remove", text: line.slice(1) };
+  }
+  if ((line === "" || line.startsWith(" ")) && hunk.oldRemaining > 0 && hunk.newRemaining > 0) {
+    hunk.oldRemaining -= 1;
+    hunk.newRemaining -= 1;
+    return { kind: "context", text: line.slice(1) };
+  }
+  return null;
+}
+
+/** Classify only lines covered by a valid hunk; headers outside it stay visible as metadata. */
+function* classifyUnifiedDiff(unifiedDiff: string): Generator<DiffLine> {
+  const lines = unifiedDiff.replace(/\r/g, "").split("\n");
+  if (lines.at(-1) === "") lines.pop();
+  let hunk: UnifiedHunkRange | null = null;
+  for (const line of lines) {
+    const nextHunk = parseUnifiedHunkRange(line);
+    if (nextHunk) {
+      yield { kind: "meta", text: line };
+      hunk = nextHunk;
+      continue;
+    }
+    if (hunk) {
+      const classified = classifyUnifiedHunkLine(line, hunk);
+      if (classified) {
+        yield classified;
+        if (hunk.oldRemaining === 0 && hunk.newRemaining === 0) hunk = null;
+        continue;
+      }
+      hunk = null;
+    }
+    yield classifyOutsideUnifiedLine(line);
+  }
+}
+
 export function diffStatsFromUnifiedDiff(unifiedDiff: string): DiffStats {
   let additions = 0;
   let deletions = 0;
-  for (const line of unifiedDiff.replace(/\r/g, "").split("\n")) {
-    if (line.startsWith("+++") || line.startsWith("---") || line.startsWith("@@")) continue;
-    if (line.startsWith("+")) additions += 1;
-    else if (line.startsWith("-")) deletions += 1;
+  for (const line of classifyUnifiedDiff(unifiedDiff)) {
+    if (line.kind === "add") additions += 1;
+    else if (line.kind === "remove") deletions += 1;
   }
   return { additions, deletions };
 }
@@ -477,19 +520,7 @@ function linesForChange(value: string): string[] {
 
 export function diffLinesForDetail(detail: Extract<ToolCallDetail, { type: "edit" }>): DiffLine[] {
   if (detail.unifiedDiff !== undefined) {
-    return detail.unifiedDiff
-      .replace(/\r/g, "")
-      .split("\n")
-      .filter((line, index, lines) => !(index === lines.length - 1 && line === ""))
-      .map((line) => {
-        if (line.startsWith("@@") || line.startsWith("+++") || line.startsWith("---")) {
-          return { kind: "meta", text: line };
-        }
-        if (line.startsWith("+")) return { kind: "add", text: line.slice(1) };
-        if (line.startsWith("-")) return { kind: "remove", text: line.slice(1) };
-        if (line.startsWith(" ")) return { kind: "context", text: line.slice(1) };
-        return { kind: "context", text: line };
-      });
+    return Array.from(classifyUnifiedDiff(detail.unifiedDiff));
   }
 
   return boundedLineChanges(detail.oldString ?? "", detail.newString ?? "").flatMap((change) => {

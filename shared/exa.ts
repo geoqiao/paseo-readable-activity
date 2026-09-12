@@ -1,17 +1,11 @@
+import { compactText } from "./summary";
+
 export type ExaToolKind =
   | "search"
   | "fetch"
   | "agent"
   | "research-guide"
   | "schema-templates";
-
-export interface ExaSearchResult {
-  title: string;
-  url?: string;
-  published?: string;
-  author?: string;
-  highlights?: string;
-}
 
 type JsonRecord = Record<string, unknown>;
 
@@ -93,87 +87,5 @@ export function exaToolSummary(kind: ExaToolKind, input: unknown): string | unde
         ? fieldString(record, "url")
         : fieldString(record, "prompt") ?? fieldString(record, "query");
   if (!value) return undefined;
-  const normalized = value.replace(/\s+/g, " ").trim();
-  return normalized.length > 180 ? `${normalized.slice(0, 179)}…` : normalized;
-}
-
-function textParts(value: unknown): string[] {
-  if (typeof value === "string") return [value];
-  const record = asRecord(value);
-  if (!record) return [];
-  if (record.structuredContent !== undefined) {
-    const structuredText = textParts(record.structuredContent);
-    if (structuredText.length > 0) return structuredText;
-  }
-  if (typeof record.text === "string") return [record.text];
-  if (Array.isArray(record.content)) {
-    return record.content.flatMap((part) => textParts(part));
-  }
-  return [];
-}
-
-export function exaOutputText(value: unknown): string | undefined {
-  const text = textParts(value).filter(Boolean).join("\n\n").trim();
-  return text || undefined;
-}
-
-function resultFromRecord(record: JsonRecord): ExaSearchResult | null {
-  const title = fieldString(record, "title", "name");
-  if (!title) return null;
-  return {
-    title,
-    ...(fieldString(record, "url", "link") ? { url: fieldString(record, "url", "link") } : {}),
-    ...(fieldString(record, "published", "publishedDate", "publishedAt")
-      ? { published: fieldString(record, "published", "publishedDate", "publishedAt") }
-      : {}),
-    ...(fieldString(record, "author", "authorName")
-      ? { author: fieldString(record, "author", "authorName") }
-      : {}),
-    ...(fieldString(record, "highlights", "highlight", "text")
-      ? { highlights: fieldString(record, "highlights", "highlight", "text") }
-      : {}),
-  };
-}
-
-function structuredResults(value: unknown): ExaSearchResult[] {
-  const record = asRecord(value);
-  if (!record) return [];
-  if (record.structuredContent !== undefined) return structuredResults(record.structuredContent);
-  if (Array.isArray(record.results)) {
-    return record.results.flatMap((result) => {
-      const resultRecord = asRecord(result);
-      const parsed = resultRecord ? resultFromRecord(resultRecord) : null;
-      return parsed ? [parsed] : [];
-    });
-  }
-  return [];
-}
-
-function parseTextResults(text: string): ExaSearchResult[] {
-  return text
-    .split(/\n\s*---\s*\n(?=Title:\s)/)
-    .map((block) => {
-      const title = block.match(/^Title:\s*(.+)$/m)?.[1]?.trim();
-      if (!title) return null;
-      const url = block.match(/^URL:\s*(.+)$/m)?.[1]?.trim();
-      const published = block.match(/^Published:\s*(.+)$/m)?.[1]?.trim();
-      const author = block.match(/^Author:\s*(.+)$/m)?.[1]?.trim();
-      const highlightsMatch = block.match(/^Highlights:\s*\n([\s\S]*)$/m);
-      const highlights = highlightsMatch?.[1]?.trim();
-      return {
-        title,
-        ...(url ? { url } : {}),
-        ...(published ? { published } : {}),
-        ...(author ? { author } : {}),
-        ...(highlights ? { highlights } : {}),
-      } satisfies ExaSearchResult;
-    })
-    .filter((result): result is ExaSearchResult => result !== null);
-}
-
-export function parseExaSearchResults(value: unknown): ExaSearchResult[] {
-  const structured = structuredResults(value);
-  if (structured.length > 0) return structured;
-  const text = exaOutputText(value);
-  return text ? parseTextResults(text) : [];
+  return compactText(value);
 }

@@ -11,8 +11,6 @@ import {
   paseoToolLabel,
   paseoToolLeafName,
   paseoToolSummary,
-  paseoToolResult,
-  unwrapPaseoToolOutput,
   resolveToolCallPresentation,
 } from "./presentation";
 
@@ -30,6 +28,86 @@ describe("colorful activity presentation", () => {
     expect(
       diffStatsFromUnifiedDiff("--- a/main.ts\n+++ b/main.ts\n@@ -1 +1 @@\n-old\n+new\n"),
     ).toEqual({ additions: 1, deletions: 1 });
+  });
+
+  it("treats header-looking content inside a tracked hunk as diff content", () => {
+    const unifiedDiff = [
+      "--- a/README.md",
+      "+++ b/README.md",
+      "@@ -1,2 +1,3 @@",
+      " ---",
+      "---counter",
+      "+++counter",
+      "+---",
+    ].join("\n");
+    expect(diffStatsFromUnifiedDiff(unifiedDiff)).toEqual({ additions: 2, deletions: 1 });
+    expect(diffLinesForDetail({ type: "edit", filePath: "README.md", unifiedDiff })).toEqual([
+      { kind: "meta", text: "--- a/README.md" },
+      { kind: "meta", text: "+++ b/README.md" },
+      { kind: "meta", text: "@@ -1,2 +1,3 @@" },
+      { kind: "context", text: "---" },
+      { kind: "remove", text: "--counter" },
+      { kind: "add", text: "++counter" },
+      { kind: "add", text: "---" },
+    ]);
+  });
+
+  it("tracks omitted, zero-count, and multiple-file hunk ranges", () => {
+    const unifiedDiff = [
+      "--- a/one.txt",
+      "+++ b/one.txt",
+      "@@ -1 +1 @@",
+      "---counter",
+      "+++counter",
+      "--- a/two.txt",
+      "+++ b/two.txt",
+      "@@ -0,0 +1 @@",
+      "+insert",
+      "@@ -3,1 +3,0 @@",
+      "-delete",
+      "\\ No newline at end of file",
+    ].join("\n");
+    expect(diffStatsFromUnifiedDiff(unifiedDiff)).toEqual({ additions: 2, deletions: 2 });
+    const lines = diffLinesForDetail({ type: "edit", filePath: "two.txt", unifiedDiff });
+    expect(lines.filter((line) => line.kind === "meta").map((line) => line.text)).toEqual([
+      "--- a/one.txt",
+      "+++ b/one.txt",
+      "@@ -1 +1 @@",
+      "--- a/two.txt",
+      "+++ b/two.txt",
+      "@@ -0,0 +1 @@",
+      "@@ -3,1 +3,0 @@",
+      "\\ No newline at end of file",
+    ]);
+    expect(lines.filter((line) => line.kind === "add").map((line) => line.text)).toEqual(["++counter", "insert"]);
+    expect(lines.filter((line) => line.kind === "remove").map((line) => line.text)).toEqual(["--counter", "delete"]);
+  });
+
+  it("keeps partial hunks visible and falls back conservatively for malformed headers", () => {
+    const partial = ["--- a/file", "+++ b/file", "@@ -1,2 +1,2 @@", "-old", "+new"].join("\n");
+    expect(diffStatsFromUnifiedDiff(partial)).toEqual({ additions: 1, deletions: 1 });
+    expect(diffLinesForDetail({ type: "edit", filePath: "file", unifiedDiff: partial })).toHaveLength(5);
+
+    const malformed = ["--- a/file", "+++ b/file", "@@ malformed @@", "-not parsed", "+not parsed"].join("\n");
+    expect(() => diffLinesForDetail({ type: "edit", filePath: "file", unifiedDiff: malformed })).not.toThrow();
+    expect(diffStatsFromUnifiedDiff(malformed)).toEqual({ additions: 0, deletions: 0 });
+    expect(diffLinesForDetail({ type: "edit", filePath: "file", unifiedDiff: malformed }).map((line) => line.text)).toEqual(
+      malformed.split("\n"),
+    );
+  });
+
+  it("keeps a hunk active across whitespace-stripped blank context lines", () => {
+    const unifiedDiff = "@@ -1,4 +1,4 @@\n a\n\n+b\n-c\n d\n";
+    expect(diffStatsFromUnifiedDiff(unifiedDiff)).toEqual({ additions: 1, deletions: 1 });
+    expect(diffLinesForDetail({ type: "edit", filePath: "a.txt", unifiedDiff }).map((line) => line.kind))
+      .toEqual(["meta", "context", "context", "add", "remove", "context"]);
+  });
+
+  it("counts a large unified diff without changing its source", () => {
+    const count = 100_000;
+    const unifiedDiff = "@@ -0,0 +1," + count + " @@\n" + "+++counter;\n".repeat(count);
+    expect(diffStatsFromUnifiedDiff(unifiedDiff)).toEqual({ additions: count, deletions: 0 });
+    expect(unifiedDiff.endsWith("+++counter;\n")).toBe(true);
   });
 
   it("counts changes when an edit only has old and new strings", () => {
@@ -128,33 +206,6 @@ describe("colorful activity presentation", () => {
       icon: "Bot",
       label: "Paseo Create Agent",
       summary: "Random Number Agent 3 · pi/plexus/gpt-5.6-luna",
-    });
-  });
-
-  it("unwraps MCP text envelopes with diagnostic prefixes", () => {
-    const output = {
-      content: [
-        {
-          type: "text",
-          text: 'availableModes_count=0\\n\\n{"agentId":"agt_123","status":"running"}',
-        },
-      ],
-    };
-    expect(unwrapPaseoToolOutput(output)).toEqual({
-      agentId: "agt_123",
-      status: "running",
-    });
-    expect(paseoToolResult({ ok: true, result: { browserId: "tab-1" } })).toEqual({
-      browserId: "tab-1",
-    });
-    expect(
-      paseoToolResult({
-        ok: false,
-        error: { code: "browser_timeout", message: "Timed out" },
-      }),
-    ).toEqual({
-      ok: false,
-      error: { code: "browser_timeout", message: "Timed out" },
     });
   });
 

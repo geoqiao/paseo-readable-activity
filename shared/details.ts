@@ -45,7 +45,7 @@ export interface DetailSection {
   language?: string;
   prose?: boolean;
   diff?: DiffLine[];
-  raw?: string;
+  raw?: unknown;
   readable?: ReadableValue;
 }
 
@@ -124,8 +124,15 @@ export function presentValue(value: unknown, language?: string) {
 export function previewText(text: string): TextPreview {
   const lines = text.slice(0, PREVIEW_CHARS + 1).split("\n");
   let preview = lines.slice(0, PREVIEW_LINES).join("\n").slice(0, PREVIEW_CHARS);
-  // Do not leave half an emoji at a UTF-16 character boundary.
-  if (preview.length < text.length && /[\uD800-\uDBFF]$/.test(preview)) preview = preview.slice(0, -1);
+  // Do not leave half a valid surrogate pair at a UTF-16 character boundary.
+  // A lone surrogate is valid JS text and must not be silently removed.
+  const last = preview.charCodeAt(preview.length - 1);
+  const next = text.charCodeAt(preview.length);
+  if (
+    preview.length < text.length
+    && last >= 0xd800 && last <= 0xdbff
+    && next >= 0xdc00 && next <= 0xdfff
+  ) preview = preview.slice(0, -1);
   return { text: preview, truncated: preview.length < text.length };
 }
 
@@ -419,7 +426,9 @@ function appendPreviewSegment(
   const source = actualSeparator + segment.text;
   const candidate = text + source.slice(0, PREVIEW_CHARS + 1);
   const preview = previewText(candidate);
-  const visible = preview.text.startsWith(text) ? preview.text.slice(text.length) : preview.text;
+  // Noninitial segments have a newline separator, so appending cannot turn
+  // an earlier lone surrogate into a split pair or shorten the emitted prefix.
+  const visible = preview.text.slice(text.length);
   if (visible) {
     const separatorShown = actualSeparator && visible.startsWith(actualSeparator) ? actualSeparator : undefined;
     output.push(publicSegment(segment, separatorShown ? visible.slice(separatorShown.length) : visible, separatorShown));
@@ -512,7 +521,14 @@ export function detailSections(data: ToolCallItemData): DetailSection[] {
         sections.push(section("Exit code", String(detail.exitCode), "text"));
       }
       break;
-    case "read":
+    case "read": {
+      const contents = section("Contents", detail.content, data.presentation.language ?? "text");
+      sections = [
+        section("File", detail.filePath, "text"),
+        detail.offset !== undefined || detail.limit !== undefined ? { ...contents, raw: detail } : contents,
+      ];
+      break;
+    }
     case "write":
       sections = [
         section("File", detail.filePath, "text"),
@@ -525,6 +541,7 @@ export function detailSections(data: ToolCallItemData): DetailSection[] {
       if (detail.unifiedDiff !== undefined) {
         sections.push({
           ...section("Diff", detail.unifiedDiff, "text"),
+          raw: detail,
           ...(detail.unifiedDiff.length <= MAX_FORMAT_CHARS ? { diff: diffLinesForDetail(detail) } : {}),
         });
       } else if (size <= MAX_FORMAT_CHARS) {
@@ -534,7 +551,7 @@ export function detailSections(data: ToolCallItemData): DetailSection[] {
           value: diff.map((line) => (line.kind === "add" ? "+" : line.kind === "remove" ? "-" : " ") + line.text).join("\n"),
           diff,
           language: "text",
-          raw: rawValue(detail),
+          raw: detail,
         });
       } else {
         sections.push(section("Before", detail.oldString, data.presentation.language ?? "text"));

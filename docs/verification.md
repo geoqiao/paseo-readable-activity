@@ -8,6 +8,16 @@ It was reloaded into the existing enabled macOS Paseo 0.8.0 installation, which 
 No daemon restart, host display-preference change or other plugin state change was performed.
 CI runs the same checks on Node.js 22 and 24.
 
+The separate v0.1.0-beta.3 code review passes typecheck, zero lint issues and
+**13 files / 217 tests**. Obsolete tests for unreachable output parsers were removed;
+active-path regressions were added instead. In an isolated before-fix checkout,
+the initial 213-case review suite produced **14 failures / 199 passes** against
+beta.2 runtime code. A further two renderer cases reproduced repeated Raw
+serialization and now pass; the final suite also covers 100,000-line diff counts.
+The independent review's whitespace-stripped blank-context case also failed
+before its one-condition fix and passes now.
+See [code-review.md](code-review.md).
+
 Coverage includes:
 - Lexical JSON fidelity, empty/malformed/oversized payloads, generated-output bounds and surrogate boundaries.
 - Explicit code inputs, typed result envelopes, non-text placeholders and full Raw data.
@@ -35,6 +45,17 @@ The baseline browser suite was repeated for beta.2. A new **1500×1050 / 390×84
 also verified nested Pi output, literal escapes, one-layer ACP blocks, mixed JSON token colors,
 full Readable/Raw copying, streaming, compact status spacing and absence of horizontal page overflow.
 The first pass exposed oversized newline-only status boxes; those were fixed and the check rerun.
+
+For beta.3, both preceding browser suites passed again. A separate `?review` pass
+at **1500×1050 dark / 390×844 light** verified hunk-aware diff colors/counts,
+complete unified/before/after Raw copying, read offset zero, lone-surrogate preview
+boundaries, streaming and preservation of Raw choice through layout/theme updates.
+The repeated output screenshot was byte-identical; no preview artwork was changed.
+These are synthetic production-component checks, not a new native-client matrix.
+After typecheck, beta.3 was reloaded into the same enabled macOS Paseo 0.8.0
+installation. Its new log entries were only stopping/stopped/loading/ready,
+with no new stderr. The DSH and pet installations retained enabled/running state;
+the daemon and display preferences were not changed.
 
 A read-only public-SDK replay of eight recent live timelines exercised **582 completed unknown
 tool calls**: all stayed within the shared preview bounds, none threw, and hashes confirmed all

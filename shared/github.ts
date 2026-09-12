@@ -1,3 +1,5 @@
+import { compactText } from "./summary";
+
 export type GithubToolKind =
   | "actions-get"
   | "actions-list"
@@ -82,12 +84,6 @@ export function githubToolIcon(kind: GithubToolKind): string {
   return GITHUB_TOOL_ICONS[kind];
 }
 
-function compactText(value: string, maxLength = 180): string | undefined {
-  const normalized = value.replace(/\s+/g, " ").trim();
-  if (!normalized) return undefined;
-  return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 1)}…` : normalized;
-}
-
 export function githubToolSummary(kind: GithubToolKind, input: unknown): string | undefined {
   const record = asRecord(input);
   switch (kind) {
@@ -115,54 +111,4 @@ export function githubToolSummary(kind: GithubToolKind, input: unknown): string 
         fieldString(record, "jobId", "job_id")
       );
   }
-}
-
-function parseEmbeddedJson(value: string): unknown {
-  try {
-    return JSON.parse(value) as unknown;
-  } catch {
-    for (const match of value.matchAll(/\{|\[/g)) {
-      const offset = match.index;
-      if (offset === undefined) continue;
-      try {
-        return JSON.parse(value.slice(offset)) as unknown;
-      } catch {
-        continue;
-      }
-    }
-    return undefined;
-  }
-}
-
-export function githubOutputText(value: unknown): string | undefined {
-  if (typeof value === "string") return value.trim() || undefined;
-  const record = asRecord(value);
-  if (!record) return undefined;
-  if (record.structuredContent !== undefined) {
-    return githubOutputText(record.structuredContent);
-  }
-  if (typeof record.text === "string") return record.text.trim() || undefined;
-  if (Array.isArray(record.content)) {
-    const text = record.content
-      .map((part) => (asRecord(part)?.text as string | undefined))
-      .filter((part): part is string => Boolean(part))
-      .join("\n\n")
-      .trim();
-    return text || undefined;
-  }
-  return undefined;
-}
-
-export function githubOutputValue(value: unknown): unknown {
-  const record = asRecord(value);
-  if (!record) {
-    if (typeof value === "string") return parseEmbeddedJson(value) ?? value;
-    return value;
-  }
-  if (record.structuredContent !== undefined) return githubOutputValue(record.structuredContent);
-  if (Array.isArray(record.content)) {
-    const text = githubOutputText(record);
-    if (text) return parseEmbeddedJson(text) ?? text;
-  }
-  return value;
 }
